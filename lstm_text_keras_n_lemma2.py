@@ -23,12 +23,18 @@ from keras.datasets import imdb
 
 from vectorizer import Vectorizer, VectorizerTwoChars
 
+outfile = None
+try:
+    outfile = open("generated.txt", "at")
+    print("File for output opened")
+except:
+    print("No file output")
 
-WINDOW_LEN = 8
-TRAIN_LEN = 1000
-HIDDEN_NEURONS = 128
+WINDOW_LEN = 20
+TRAIN_LEN = 2000
+HIDDEN_NEURONS = 312
 TEXT_FILE = None# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
-REDDITOR = "epsenohyeah"
+REDDITOR = "pineconezs"
 REDDIT_MODE = "WORDS" # TEXT or WORDS
 
 MINIBATCH = 500
@@ -343,6 +349,8 @@ def predict_100(net,vectorizer,X,y):
         pass
     #print("Prediction total:","".join([vec.from_vector(list(p)) for p in prediction]))
     print("\n\nRESULT:\n", result)
+    if outfile:
+        outfile.write("\n\n"+result+"\n")
     print("(rand factor was {})".format(static_factor))
 
 
@@ -449,11 +457,13 @@ def redditor_text(redditor, amount=50, justonerandom=False):
         comment_no = randint(0, amount - 1)
         return [c for c in all_comments][comment_no].body
     for c in all_comments:
-        txt += c.body + "\n\n"
+        txt += "#_BEGIN_# " + c.body + " #_END_# \n\n"
 
     if REDDIT_MODE == "TEXT":
         return txt.encode('utf-8', errors='replace')
     elif REDDIT_MODE == "WORDS":
+        for item in "*":
+            txt=txt.replace(item,"")
         for item in "\n,;":
             txt=txt.replace(item," "+item+" ")
         for item in "!?.:":
@@ -509,7 +519,7 @@ def run():
     #v = TimeVectorizer2Lemma(input_text) <- for when using REDDIT_MODE="TEXT", not words
     v = TimeVectorizer(input_text)
 
-    LIMIT = 200
+    LIMIT = 600
     print("LIMITING DICTIONARY TO ", LIMIT)
     v.dictionary = v.dictionary[:LIMIT]
     print(v.dictionary)
