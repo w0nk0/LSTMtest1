@@ -9,7 +9,7 @@ class Vectorizer:
 
     def tokenize(self,stream):
         tokens=[]
-        for n in range(0,len(stream),1):
+        for n in range(0,len(stream)-1,1):
             tokens.append(stream[n])
         return tokens
 
@@ -30,13 +30,17 @@ class Vectorizer:
         dic = {}
         for item in self.tokenize(text):
             dic[item] = dic.get(item,0)+1
+            if len(dic.values()) > cutoff:
+                break
         dic[""]=999999
         # now sort
         self.items = list(dic.items())
+        print("ITEMS",self.items)
         self.items.sort(key=lambda k: -k[1])
-        if cutoff:
-            self.items = self.items[:cutoff]
+        #if cutoff:
+        #    self.items = self.items[:cutoff]
         self.dictionary = [x for x,count in self.items]
+        print("DIC",self.dictionary)
         self.vector_len = len(self.dictionary)
 
     def index(self,item):
@@ -45,7 +49,7 @@ class Vectorizer:
         else:
             return 0
 
-    def item(self,index, unknown_token_value=None):
+    def item(self,index,unknown_token_value=None):
         try:
             return self.dictionary[index]
         except IndexError:
@@ -66,18 +70,11 @@ class Vectorizer:
             mat.append(self.vector(item))
         return mat
 
-    def from_matrix(self,matrix):
-        """Generate a one-hot matrix from a sequence of items"""
-        val=[]
-        for vector in matrix:
-            val.append(self.from_vector(vector))
-        return val
-
-    def from_vector(self,vec):
+    def from_vector(self,vec,unknown_token_value=None):
         winner = max(vec)
         return self.detokenize(self.item(vec.index(winner)))
 
-    def from_vector_rand(self,vec,randomization=0.5):
+    def from_vector_rand(self,vec,randomization=0.5,unknown_token_value=None):
         from random import random
         srt = [(v,x) for x,v in enumerate(vec)]
         srt.sort()
@@ -85,7 +82,7 @@ class Vectorizer:
         for winner, idx in srt:
             if random()<(1-randomization):
                 break
-        return self.detokenize(self.item(idx))
+        return self.detokenize(self.item(idx,unknown_token_value))
 
 
 
@@ -125,21 +122,17 @@ class VectorizerTwoChars(Vectorizer):
     def _c(self,item):
         return item
 
-def test(test_class=Vectorizer):
+def test():
     #reload(vectorizer)
     d=testdata()
-    v=test_class(d)
+    v=Vectorizer(d)
     print("Len of dictionary:",v.len())
-    print("dictionary:",v.dictionary)
 
-    print("tokenize heute")
     toks = v.tokenize("heute")
     print(toks)
 
-    print('mat = v.to_matrix("heute aber nicht")')
     mat = v.to_matrix("heute aber nicht")
     print(mat)
 
-    print('text = [v.detokenize(v.from_vector(x)) for x in mat]')
-    text = [v.detokenize(v.from_vector(x)) for x in mat]
+    text = [v.detokenize(v.from_vector(x)) for x in  mat]
     print("".join(text))

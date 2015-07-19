@@ -30,12 +30,12 @@ try:
 except:
     print("No file output")
 
-WINDOW_LEN = 20
-TRAIN_LEN = 2000
-HIDDEN_NEURONS = 312
-TEXT_FILE = None# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
-REDDITOR = "pineconezs"
-REDDIT_MODE = "WORDS" # TEXT or WORDS
+WINDOW_LEN = 40
+TRAIN_LEN = 15000
+HIDDEN_NEURONS = 400
+TEXT_FILE = None #"rddt-de-300.cache"# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
+REDDITOR = "pineconez"
+REDDIT_MODE = "TEXT" # TEXT or WORDS
 
 MINIBATCH = 500
 
@@ -64,13 +64,36 @@ class TimeVectorizer(Vectorizer):
             raise TypeError("from_vector_.. got a non- 1- or 2-dimensional vector :("+str(v))
         return list(vec)
 
-    def from_vector(self,vec):
+    def from_vector(self,vec,unknown_token_value=None):
         vec = self._vectify(vec)
         return super(TimeVectorizer,self).from_vector(vec)
 
-    def from_vector_rand(self,vec,randomization=0.5):
+    def from_vector_rand(self,vec,randomization=0.5,unknown_token_value=None):
         vec = self._vectify(vec)
         return super(TimeVectorizer,self).from_vector_rand(vec,randomization)
+
+class TimeVectorizerNoUnknown(TimeVectorizer):
+    def from_vector_rand_no_dummy(self,vec,randomization=0.5,unknown_token_value=None):
+        from random import random
+        vec = self._vectify(vec)
+        ## pick the NEXT BEST guess if the best guess is a word not in dictionary
+        ##   words not in dict should have one-hot [ 1.0, ...... ], so the
+        ##   wuinner may be anything but the first one-hot neuron
+        #unknown_value = self.item(-1)
+        # can just enumerate from >1, no?
+        try:
+            srt = [(v,x) for x,v in enumerate(vec[1:])] # leave out words not in dictionary?
+            srt.sort()
+            srt.reverse()
+        except:
+            vec=np.array(vec)
+            print("Exception in from_vector_rand_no_dummy - vec shape={} vec={} srt={}".format(vec.shape,vec,srt))
+            raise
+        for winner, idx in srt:
+            if random()<(1-randomization):
+                break
+        return self.detokenize(self.item(idx,unknown_token_value))
+
 
 class TimeVectorizer2Lemma(VectorizerTwoChars):
     def _vectify(self,vec):
@@ -81,13 +104,13 @@ class TimeVectorizer2Lemma(VectorizerTwoChars):
             raise TypeError("from_vector_.. got a non- 1- or 2-dimensional vector :("+str(v))
         return list(vec)
 
-    def from_vector(self,vec):
+    def from_vector(self,vec,unknown_token_value=None):
         vec = self._vectify(vec)
-        return super(TimeVectorizer2Lemma,self).from_vector(vec)
+        return super(TimeVectorizer2Lemma,self).from_vector(vec,unknown_token_value)
 
-    def from_vector_rand(self,vec,randomization=0.5):
+    def from_vector_rand(self,vec,randomization=0.5,unknown_token_value=None):
         vec = self._vectify(vec)
-        return super(TimeVectorizer2Lemma,self).from_vector_rand(vec,randomization)
+        return super(TimeVectorizer2Lemma,self).from_vector_rand(vec,randomization,unknown_token_value)
 
 class OneCharacterVectorizer(Vectorizer):
     def detokenize(self, token):
@@ -101,13 +124,13 @@ class OneCharacterVectorizer(Vectorizer):
 
 
 class RandomVectorizer(Vectorizer):
-    def from_vector(self, vec):
+    def from_vector(self, vec,unknown_token_value=None):
         # print("old vec: {}".format(vec))
         vec = [v + v * random() * NOISE_FACTOR for v in vec]
         # print("new vec: {}".format(vec))
         winner = max(vec)
         win_index = vec.index(winner)
-        return self.detokenize(self.item(win_index))
+        return self.detokenize(self.item(win_index,unknown_token_value))
 
     def _c(self, item): return item
 
@@ -278,25 +301,30 @@ def predict_100(net,vectorizer,X,y):
         #print("** C 0 -1: '", [vec.from_vector(list(c)) for c in current[0]],"'  **")
         new_current = []
 
-        if (x % 100) == 99 and False: print("Last current")
+        if (x % 100) == 99 and False:
+            print("This current:")
+            for c in current[0]:
+                debug_vec_print(vec,c,"cur cur[0]",False)
 
         for c in current[0]:
             new_current.append(c)
-            if (x % 100) == 99 and False:
-                debug_vec_print(vec,c,"cur cur[0]",False)
 
         #for c in current[0][-15:]:
         #    print(vec.from_vector(list(c)),end="")
         #print(" ",x,"generated\r",end="")
 
-        txt = vec.from_vector_rand(list(p0),random_factor)
+        ## get the best/randomized NON-UNKNOWN winner
+        #txt1 = vec.from_vector_rand(p0,random_factor,unknown_token_value="#?#")
+        #print("txt1: ",txt1)
+        txt = vec.from_vector_rand_no_dummy(p0,random_factor,unknown_token_value="#?#")
         rand_p = vec.vector(txt)
+        ## and feed it back into the batch
+        new_current.append(rand_p)
         try:
             result += txt
         except:
             print("Couldn't add '{}' to result".format(txt))
 
-        new_current.append(rand_p)
         current = np.array([new_current])
         current = np.array([new_current[-WINDOW_LEN:]])
 
@@ -460,7 +488,12 @@ def redditor_text(redditor, amount=50, justonerandom=False):
         txt += "#_BEGIN_# " + c.body + " #_END_# \n\n"
 
     if REDDIT_MODE == "TEXT":
-        return txt.encode('utf-8', errors='replace')
+        if type(txt) == str: # python3
+            #txt = txt.encode('ascii','xmlcharrefreplace').decode()
+            txt = txt.encode('ascii','xmlcharrefreplace').decode()
+        else:
+            txt = txt.encode('utf-8', errors='xmlcharrefreplace')
+        return txt
     elif REDDIT_MODE == "WORDS":
         for item in "*":
             txt=txt.replace(item,"")
@@ -478,19 +511,20 @@ def redditor_text(redditor, amount=50, justonerandom=False):
 
 
 def get_input_text(filename, redditor, train_len):
-    if TEXT_FILE:
-        with open(TEXT_FILE) as f:
+    input_text="#FAILED_READING_FILE<{}>#".format(filename)
+    if filename:
+        with open(filename) as f:
             input_text = f.read()
     else:
-        input_text = redditor_text(REDDITOR,100)
+        input_text = redditor_text(redditor,100)
 
-    start = int(random() * (len(input_text) - TRAIN_LEN - 100))
+    start = int(random() * (len(input_text) - train_len - 100))
     try:
         start = input_text.index(".", start) + 1
         input_text = input_text.strip()
     except:
         start = 0
-    pruned = input_text[start:start + TRAIN_LEN]
+    pruned = input_text[start:start + train_len]
     try:
         pruned = ".".join(pruned.split(".")[:-1]) + "."
         pruned = pruned.strip()
@@ -517,14 +551,29 @@ def run():
     # v=OneCharacterVectorizer(". "+input_text)
 
     #v = TimeVectorizer2Lemma(input_text) <- for when using REDDIT_MODE="TEXT", not words
-    v = TimeVectorizer(input_text)
 
-    LIMIT = 600
+    LIMIT = 1000
+    if REDDIT_MODE == "TEXT" : LIMIT = 100
     print("LIMITING DICTIONARY TO ", LIMIT)
-    v.dictionary = v.dictionary[:LIMIT]
-    print(v.dictionary)
-    print("Len vectorizer:", len(v.dictionary))
 
+    v = TimeVectorizerNoUnknown(input_text,cutoff=LIMIT)
+
+    # V throws ascii/unicode error
+    #print("\n",type(v)," Dictionary: {}".format(v.dictionary.encode("ascii",errors="ignore")))
+    print("Len vectorizer:", len(v.dictionary))
+    my=v.to_matrix('my')
+    print("v.to_matrix('my')", my)
+    print("my[0]",v.from_vector_rand_no_dummy(list(my[0]),0.1,unknown_token_value="#?#"))
+    print("my",v.from_vector_rand_no_dummy(list(my),0.1,unknown_token_value="#?#"))
+    from random import randint
+    for _ in range(500):
+        x=v.vector(input_text[randint(0,len(input_text))])
+        print(v.from_vector_rand(x,0.5,unknown_token_value="#?#"),end="")
+    print(v.dictionary)
+    print("")
+    print("?? my == ",v.from_matrix(my))
+    from time import sleep
+    sleep(4)
     # print("Dictionary:",["".join(str(x)) for x in v.dictionary])
 
     lemma = choice(v.dictionary)
@@ -535,7 +584,6 @@ def run():
     input_mat = v.to_matrix(pruned)
 
     # # check if mapping worksS
-
     # for num,i in enumerate(input_mat[0:10]):
     # debug_vec_print(v,i,"input[{}]".format(num))
     # print("input_mat[:2] : ",np.array(input_mat[:2]))
@@ -543,15 +591,13 @@ def run():
     anneal_mat = anneal_matrix(input_mat)
 
     # # check if anneal-mapping works
-
     # for num,i in enumerate(anneal_mat[0:10]):
     # debug_vec_print(v,i,"input[{}]".format(num))
-
     # # anneal_mat  # # !!!!!!!!!!!!!!!!!!!!!!
 
     # X,y = make_dataset_n(input_mat,v,WINDOW_LEN)
     X, y = make_dataset_n(input_mat, v, WINDOW_LEN)
-    print("----------X-----------\n", X)
+    #print("----------X-----------\n", X)
     print("Shapes: X", X.shape, "y", y.shape)
     print("X - {} entries".format(len(X)))
     print("Shape X[0]", X[0].shape)
@@ -571,7 +617,8 @@ def run():
     categories = v.len()
     net = make_net(categories, categories, hidden_size=HIDDEN_NEURONS)
 
-    net.fit(X, y, nb_epoch=10, batch_size=WINDOW_LEN, show_accuracy=False, validation_split=0.1, verbose=1)
+    predict_100(net,v,X,y)
+    net.fit(X, y, nb_epoch=1, batch_size=WINDOW_LEN, show_accuracy=True, validation_split=0.1, verbose=1)
 
     zipped = list(zip(X, y))
     for i in range(10000):
@@ -600,9 +647,9 @@ def run():
         #fit for 15 seconds
         initial_time = time()
         SECONDS = 15
-        print("Fitting for at least 4 epochs or 15 seconds..")
+        print("Fitting for at least 15 seconds..")
         while time() < initial_time + SECONDS:
-            net.fit(X, y, nb_epoch=4, batch_size=WINDOW_LEN, show_accuracy=False, validation_split=0.2, verbose=1)
+            net.fit(X, y, nb_epoch=1, batch_size=WINDOW_LEN, show_accuracy=True, validation_split=0.15, verbose=1)
 
         # print(run_test(net,v))
 

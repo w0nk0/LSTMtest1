@@ -45,11 +45,11 @@ class Vectorizer:
         else:
             return 0
 
-    def item(self,index, unknown_token_value=None):
+    def item(self,index):
         try:
             return self.dictionary[index]
         except IndexError:
-            return unknown_token_value
+            return None
 
     def len(self):
         return len(self.dictionary)
@@ -65,13 +65,6 @@ class Vectorizer:
         for item in self.tokenize(item_list):
             mat.append(self.vector(item))
         return mat
-
-    def from_matrix(self,matrix):
-        """Generate a one-hot matrix from a sequence of items"""
-        val=[]
-        for vector in matrix:
-            val.append(self.from_vector(vector))
-        return val
 
     def from_vector(self,vec):
         winner = max(vec)
