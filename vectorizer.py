@@ -9,7 +9,7 @@ class Vectorizer:
 
     def tokenize(self,stream):
         tokens=[]
-        for n in range(0,len(stream)-1,1):
+        for n in range(0,len(stream),1):
             tokens.append(stream[n])
         return tokens
 
