@@ -45,11 +45,11 @@ class Vectorizer:
         else:
             return 0
 
-    def item(self,index):
+    def item(self,index, unknown_token_value=None):
         try:
             return self.dictionary[index]
         except IndexError:
-            return None
+            return unknown_token_value
 
     def len(self):
         return len(self.dictionary)
