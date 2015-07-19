@@ -296,7 +296,7 @@ def predict_100(net,vectorizer,X,y):
     for x in range(150):
         #print("Shape:",current.shape)
         prediction = net.predict(current,batch_size=len(current[0]),verbose=0)
-        p0 = prediction[0]
+        p0 = prediction[-1]
         class_prediction = net.predict_classes(current,batch_size=len(current[0]),verbose=0)
         #print("** C 0 -1: '", [vec.from_vector(list(c)) for c in current[0]],"'  **")
         new_current = []
@@ -609,6 +609,14 @@ def run():
         debug_vec_print(v, X[0][-1], "X[0][-1]")
         debug_vec_print(v, y[0], "y[0]")
         stdout.flush()
+
+
+    print("X[0]")
+    v.print_matrix(X[0])
+    print("y[0]")
+    v.print_matrix(y[0])
+    from time import sleep
+    sleep(4)
 
     # ##### ###### ###### MAKE NETWORK ###### ###### ######
     # ##### ###### ###### MAKE NETWORK ###### ###### ######

@@ -66,6 +66,13 @@ class Vectorizer:
             mat.append(self.vector(item))
         return mat
 
+    def print_matrix(self,matrix):
+        items=self.from_matrix(matrix)
+        print("Matrix with {} items".format(len(items)))
+        for item in items:
+            print(item,end="")
+        print()
+
     def from_matrix(self,matrix):
         """Generate a one-hot matrix from a sequence of items"""
         val=[]
