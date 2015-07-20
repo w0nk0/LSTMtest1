@@ -9,9 +9,9 @@ from sys import stdout
 from itertools import cycle
 from random import random, choice, sample
 from time import time
-from optparse import OptionParser
-import numpy as np
 
+import numpy as np
+from optparse import OptionParser
 from rddt import redditor_text
 
 from keras.preprocessing import sequence
@@ -33,11 +33,11 @@ except:
     print("No file output")
 
 WINDOW_LEN = 20 # 50
-TRAIN_LEN = 150 # 15000
-HIDDEN_NEURONS = 128 #400
-TEXT_FILE = "rddt-de-300.cache"# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
-REDDITOR = None # "pineconez"
-REDDIT_MODE = "TEXT" ## TODO - ATTENTION THIS NEEDS TO BE SENT TO reddit_user..()!!
+TRAIN_LEN = 350 # 15000
+HIDDEN_NEURONS = 100 #400
+TEXT_FILE = None #"rddt-de-300.cache"# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
+REDDITOR = "epsenohyeah" # None # "pineconez"
+REDDIT_MODE = "TEXT" # TEXT or WORDS
 
 MINIBATCH = 500
 
@@ -48,6 +48,7 @@ NOISE_FACTOR = 0.0000002
 DELTA0INIT = 0.24
 CLEAN_RESULT = True
 # RETRAIN_FREQUENCY = int(16/EPOCHS_PER_CYCLE/CYCLES)
+
 
 # # len-400, neurons=32 -> gets stuck on (good) always same sentecce
 # # len 2000 neurons 16 - struggles to make words, then does OK with occasional glitch-fail, still stuck-ish
@@ -134,6 +135,7 @@ class RandomVectorizer(Vectorizer):
         return self.detokenize(self.item(win_index,unknown_token_value))
 
     def _c(self, item): return item
+
 
 class WordVectorizer(RandomVectorizer):
     def tokenize(self, stream):
@@ -255,19 +257,84 @@ def vector_randomized(vector, static_factor=0.5):
     return randomizered
 
 # ###### GENERATING SAMPLES ##############
+def run_test(net, vectorizer):
+    txt = ""
+    result = vectorizer.to_matrix(". ")[0]
+    num = 0
+    sample = ""
+
+    # # initially, generate a sentence so we don't start in the middle of one
+    txt = ""
+    # net.reset()
+    iter = 0
+    while iter < 1000 and not "." in txt and not "!" in txt and not "?" in txt:
+        # ####### TODO ###########
+        result = net.activate(result)
+
+        txt = vectorizer.from_vector(result)
+        print(iter, "\t", txt, "\r", end="")
+        iter += 1
+    print("")
+
+    # # now, loop over activations until we have enough
+    while 1:
+        # ####### TODO ###########
+        # print(num,end="")
+        stdout.flush()
+        try:
+            # print(output_2_char(result[:len(CHARS)-1]))
+            pass
+        except:
+            print("Error! {}".format(result))
+        num += 1
+
+        new_result = net.activate(result)
+
+        arr = [float(i) for i in new_result]
+        txt = vectorizer.from_vector(arr)
+        # print(txt,end="")
+        sample += txt
+        stdout.flush()
+
+        # result= [ x + random()*NOISE_FACTOR for x in new_result ]
+        result = [x + x * random() * 0.1 for x in new_result]
+
+        if CLEAN_RESULT:
+            result = vectorizer.vector(txt)
+            cleaned = []
+            for item in new_result:
+                if item > 0.5:
+                    cleaned.append(1.0)
+                else:
+                    cleaned.append(0.0)
+            result = cleaned
+
+        # print("Len result: {}".format(len(result)))
+        if num > 300:
+            break
+        if num > 120:
+            if " " in txt:
+                break
+        if len(sample) > 20:
+            if "." in txt:
+                break
+    # print("--->",sample)
+    return sample + '.'
+
+
 def make_net(in_size, out_size, hidden_size=20):
     model = Sequential()
     # model.add(LSTM(input_dim = in_size, output_dim = in_size, init="uniform", activation = "sigmoid", return_sequences=True))
-    model.add(LSTM(input_dim=in_size, output_dim=int(hidden_size/2),  return_sequences=True))
+    model.add(LSTM(input_dim=in_size, output_dim=int(hidden_size/2), init="glorot_normal", return_sequences=True))
     model.add(Dropout(0.3))
-    model.add(LSTM(input_dim=int(hidden_size/2), output_dim=hidden_size, return_sequences=True))
+    model.add(LSTM(input_dim=int(hidden_size/2), output_dim=hidden_size, init="glorot_normal", return_sequences=True))
     model.add(Dropout(0.3))
 
     #model.add(LSTM(input_dim=hidden_size, output_dim=hidden_size, init="glorot_normal"))
     #model.add(Dropout(0.3))
 
     #model.add(Dense(input_dim=hidden_size, output_dim=out_size, init="glorot_normal", activation="softmax"))
-    model.add(TimeDistributedDense(input_dim=hidden_size, output_dim=out_size))
+    model.add(TimeDistributedDense(input_dim=hidden_size, output_dim=out_size, init="glorot_normal"))
     model.add(Activation('softmax'))
 
     # model.add(Dense(input_dim = 5, output_dim = 1, init = "uniform", activation = "tanh"))
@@ -276,31 +343,9 @@ def make_net(in_size, out_size, hidden_size=20):
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop', class_mode="binary")  # or binary
     return model
 
-def get_input_text(filename, redditor, train_len):
-    input_text="#FAILED_READING_FILE<{}>#".format(filename)
-    if filename:
-        with open(filename) as f:
-            input_text = f.read()
-    else:
-        input_text = redditor_text(redditor,100)
-
-    start = int(random() * (len(input_text) - train_len - 100))
-    try:
-        start = input_text.index(".", start) + 1
-        input_text = input_text.strip()
-    except:
-        start = 0
-    pruned = input_text[start:start + train_len]
-    try:
-        pruned = ".".join(pruned.split(".")[:-1]) + "."
-        pruned = pruned.strip()
-    except:
-        pass
-    # print("Pruned:",pruned)
-    return input_text, pruned
 
 def predict_100(net,vectorizer,X,y):
-    random_factor=static_factor=0.35+random()*0.5
+    random_factor=static_factor=0.2+random()*0.45
     print("--------> Using static factor {} <--------".format(static_factor))
     def randomized(vector, static_factor=0.5):
         a=[random()+static_factor for x in range(len(vector))]
@@ -338,19 +383,26 @@ def predict_100(net,vectorizer,X,y):
     except:
         result = "## "
     for x in range(150):
-        print("\r",result[-60:],end="")
+        print("\r",result.replace("\n"," ")[-60:],end="")
         stdout.flush()
         #print("Shape:",current.shape)
         prediction = net.predict(current,batch_size=len(current[0]),verbose=0)
         p0 = prediction[-1]
-        if x == 0:
+        if x < 1:
+            print("\n","-" * 40)
             p=prediction
+            print("prediction[0]")
+            vec.print_matrix(prediction[0])
             print("prediction[-1]")
             vec.print_matrix(prediction[-1])
             print("p[0][0]:")
             print(vec.from_vector(p[0][0]))
             print("p[0][-1]:")
             print(vec.from_vector(p[0][-1]))
+            print("p[-1][0]:")
+            print(vec.from_vector(p[-1][0]))
+            print("p[-1][-1]:")
+            print(vec.from_vector(p[-1][-1]))
         class_prediction = net.predict_classes(current,batch_size=len(current[0]),verbose=0)
         #print("** C 0 -1: '", [vec.from_vector(list(c)) for c in current[0]],"'  **")
         new_current = []
@@ -363,14 +415,8 @@ def predict_100(net,vectorizer,X,y):
         for c in current[0]:
             new_current.append(c)
 
-        #for c in current[0][-15:]:
-        #    print(vec.from_vector(list(c)),end="")
-        #print(" ",x,"generated\r",end="")
-
         ## get the best/randomized NON-UNKNOWN winner
-        #txt1 = vec.from_vector_rand(p0,random_factor,unknown_token_value="#?#")
-        #print("txt1: ",txt1)
-        txt = vec.from_vector_rand_no_dummy(p0,random_factor,unknown_token_value="#?#")
+        txt = vec.from_vector_rand(p0[-1],random_factor,unknown_token_value="#?#") # WAS NO_DUMMY
         rand_p = vec.vector(txt)
         ## and feed it back into the batch
         new_current.append(rand_p)
@@ -378,6 +424,19 @@ def predict_100(net,vectorizer,X,y):
             result += txt
         except:
             print("Couldn't add '{}' to result".format(txt))
+
+        if x <= 1:
+            print("+" * 40)
+            print("input      :",end="")
+            vec.print_matrix(current[0])
+            print("predicted :",end="")
+            vec.print_matrix(prediction[0])
+            print("newtxt vec :",end="")
+            print([(it,lbl) for it,lbl in zip(p0[-1].round(2),vec.dictionary)])
+            print("add char   : <{}>".format(txt))
+            print("-> new in  :",end="")
+            vec.print_matrix(new_current[-WINDOW_LEN:])
+            #print("-" * 30)
 
         current = np.array([new_current])
         current = np.array([new_current[-WINDOW_LEN:]])
@@ -407,28 +466,6 @@ def predict_100(net,vectorizer,X,y):
             print("PREDICT_CLASSES")
             print(class_prediction)
 
-            #debug_vec_print(vec,prediction[0],"PRED[0]")
-            #debug_vec_print(vec,prediction[-1],"PRED[-1]")
-
-        #txt = vec.from_vector(list(prediction[-1]))
-        #print(txt," ->",vec.from_vector(list(current[0])))
-        #print(txt,end="")
-        #print(prediction)
-        #print("->", result)
-        #current = np.array([current[1],prediction])
-    #print("Shape current:", current.shape)
-    #print("RESULT:", result)
-    #print("Len(prediction)",len(prediction))
-    #print("Len(current[0])",len(current[0]))
-    #print("Len(current])",len(current))
-    try:
-        pass
-        #for p in current[0][:10]:
-        #    debug_vec_print(vec,p,"cur0[..]",False)
-        #for p in current:
-        #    debug_vec_print(vec,p,"cur[..]")
-    except Exception:
-        pass
     #print("Prediction total:","".join([vec.from_vector(list(p)) for p in prediction]))
     print("\n\nRESULT:\n", result)
     if outfile:
@@ -463,19 +500,19 @@ def run():
     # V throws ascii/unicode error
     #print("\n",type(v)," Dictionary: {}".format(v.dictionary.encode("ascii",errors="ignore")))
     print("Len vectorizer:", len(v.dictionary))
-    my=v.to_matrix('my')
-    print("v.to_matrix('my')", my)
-    print("my[0]",v.from_vector_rand_no_dummy(list(my[0]),0.1,unknown_token_value="#?#"))
-    print("my",v.from_vector_rand_no_dummy(list(my),0.1,unknown_token_value="#?#"))
+    #my=v.to_matrix('my')
+    #print("v.to_matrix('my')", my)
+    #print("my[0]",v.from_vector_rand_no_dummy(list(my[0]),0.1,unknown_token_value="#?#"))
+    #print("my",v.from_vector_rand_no_dummy(list(my),0.1,unknown_token_value="#?#"))
     from random import randint
-    for _ in range(500):
-        x=v.vector(input_text[randint(0,len(input_text))])
-        print(v.from_vector_rand(x,0.5,unknown_token_value="#?#"),end="")
+    #for _ in range(500):
+    #    x=v.vector(input_text[randint(0,len(input_text))])
+    #    print(v.from_vector_rand(x,0.5,unknown_token_value="#?#"),end="")
     print(v.dictionary)
     print("")
-    print("?? my == ",v.from_matrix(my))
-    from time import sleep
-    sleep(4)
+    #print("?? my == ",v.from_matrix(my))
+    #from time import sleep
+    #sleep(4)
     # print("Dictionary:",["".join(str(x)) for x in v.dictionary])
 
     lemma = choice(v.dictionary)
@@ -513,12 +550,12 @@ def run():
         stdout.flush()
 
 
-    print("X[0]")
-    v.print_matrix(X[0])
-    print("y[0]")
-    v.print_matrix(y[0])
+    #print("X[0]")
+    #v.print_matrix(X[0])
+    #print("y[0]")
+    #v.print_matrix(y[0])
     from time import sleep
-    sleep(4)
+    #sleep(2)
 
     # ##### ###### ###### MAKE NETWORK ###### ###### ######
     # ##### ###### ###### MAKE NETWORK ###### ###### ######
@@ -544,19 +581,7 @@ def run():
         Xpart = np.array([sx for sx, sy in samp])
         ypart = np.array([sy for sx, sy in samp])
 
-        # print ("------------ Xpart ypart -------------")
-        # debug_vec_print(v,Xpart[0][0],"Xp 0 0")
-        # debug_vec_print(v,ypart[0],"yp 0")
-        # debug_vec_print(v,Xpart[0][1],"Xp 0 1")
-        # debug_vec_print(v,ypart[0],"yp 0")
-        # debug_vec_print(v,Xpart[1][0],"Xp 1 0")
-        # debug_vec_print(v,ypart[1],"yp 1")
-        # debug_vec_print(v,Xpart[1][1],"Xp 1 1")
-        # debug_vec_print(v,ypart[1],"yp 1")
-
-        # net.fit(Xpart, ypart, nb_epoch=8, batch_size=10,show_accuracy=True,validation_split=0.2,verbose=1)
-
-        #fit for 15 seconds
+        #fit for x seconds
         initial_time = time()
         SECONDS = 30
         print("Fitting for at least {} seconds..".format(SECONDS))
@@ -564,7 +589,7 @@ def run():
         trained_amount=0
         while time() < initial_time + SECONDS:
             trained_amount+=train_epochs
-            net.fit(X, y, nb_epoch=train_epochs, batch_size=WINDOW_LEN, show_accuracy=True, validation_split=0.15, verbose=1)
+            net.fit(X, y, nb_epoch=train_epochs, batch_size=len(X), show_accuracy=True, validation_split=0.15, verbose=1)
 
         # print(run_test(net,v))
 
