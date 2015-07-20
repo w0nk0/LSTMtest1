@@ -9,8 +9,10 @@ from sys import stdout
 from itertools import cycle
 from random import random, choice, sample
 from time import time
-
+from optparse import OptionParser
 import numpy as np
+
+from rddt import redditor_text
 
 from keras.preprocessing import sequence
 from keras.optimizers import RMSprop, SGD
@@ -30,12 +32,12 @@ try:
 except:
     print("No file output")
 
-WINDOW_LEN = 40
-TRAIN_LEN = 15000
-HIDDEN_NEURONS = 400
-TEXT_FILE = None #"rddt-de-300.cache"# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
-REDDITOR = "pineconez"
-REDDIT_MODE = "TEXT" # TEXT or WORDS
+WINDOW_LEN = 20 # 50
+TRAIN_LEN = 150 # 15000
+HIDDEN_NEURONS = 128 #400
+TEXT_FILE = "rddt-de-300.cache"# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
+REDDITOR = None # "pineconez"
+REDDIT_MODE = "TEXT" ## TODO - ATTENTION THIS NEEDS TO BE SENT TO reddit_user..()!!
 
 MINIBATCH = 500
 
@@ -46,7 +48,6 @@ NOISE_FACTOR = 0.0000002
 DELTA0INIT = 0.24
 CLEAN_RESULT = True
 # RETRAIN_FREQUENCY = int(16/EPOCHS_PER_CYCLE/CYCLES)
-
 
 # # len-400, neurons=32 -> gets stuck on (good) always same sentecce
 # # len 2000 neurons 16 - struggles to make words, then does OK with occasional glitch-fail, still stuck-ish
@@ -133,7 +134,6 @@ class RandomVectorizer(Vectorizer):
         return self.detokenize(self.item(win_index,unknown_token_value))
 
     def _c(self, item): return item
-
 
 class WordVectorizer(RandomVectorizer):
     def tokenize(self, stream):
@@ -254,6 +254,50 @@ def vector_randomized(vector, static_factor=0.5):
     randomizered = (vector + rands2) * rands
     return randomizered
 
+# ###### GENERATING SAMPLES ##############
+def make_net(in_size, out_size, hidden_size=20):
+    model = Sequential()
+    # model.add(LSTM(input_dim = in_size, output_dim = in_size, init="uniform", activation = "sigmoid", return_sequences=True))
+    model.add(LSTM(input_dim=in_size, output_dim=int(hidden_size/2),  return_sequences=True))
+    model.add(Dropout(0.3))
+    model.add(LSTM(input_dim=int(hidden_size/2), output_dim=hidden_size, return_sequences=True))
+    model.add(Dropout(0.3))
+
+    #model.add(LSTM(input_dim=hidden_size, output_dim=hidden_size, init="glorot_normal"))
+    #model.add(Dropout(0.3))
+
+    #model.add(Dense(input_dim=hidden_size, output_dim=out_size, init="glorot_normal", activation="softmax"))
+    model.add(TimeDistributedDense(input_dim=hidden_size, output_dim=out_size))
+    model.add(Activation('softmax'))
+
+    # model.add(Dense(input_dim = 5, output_dim = 1, init = "uniform", activation = "tanh"))
+    print("Compiling net..with {} input, {} outputs, {} hidden please hold!".format(in_size, out_size, hidden_size))
+    # model.compile(loss = "mean_squared_error", optimizer = "rmsprop",class_mode="binary")
+    model.compile(loss='categorical_crossentropy', optimizer='rmsprop', class_mode="binary")  # or binary
+    return model
+
+def get_input_text(filename, redditor, train_len):
+    input_text="#FAILED_READING_FILE<{}>#".format(filename)
+    if filename:
+        with open(filename) as f:
+            input_text = f.read()
+    else:
+        input_text = redditor_text(redditor,100)
+
+    start = int(random() * (len(input_text) - train_len - 100))
+    try:
+        start = input_text.index(".", start) + 1
+        input_text = input_text.strip()
+    except:
+        start = 0
+    pruned = input_text[start:start + train_len]
+    try:
+        pruned = ".".join(pruned.split(".")[:-1]) + "."
+        pruned = pruned.strip()
+    except:
+        pass
+    # print("Pruned:",pruned)
+    return input_text, pruned
 
 def predict_100(net,vectorizer,X,y):
     random_factor=static_factor=0.35+random()*0.5
@@ -294,9 +338,19 @@ def predict_100(net,vectorizer,X,y):
     except:
         result = "## "
     for x in range(150):
+        print("\r",result[-60:],end="")
+        stdout.flush()
         #print("Shape:",current.shape)
         prediction = net.predict(current,batch_size=len(current[0]),verbose=0)
         p0 = prediction[-1]
+        if x == 0:
+            p=prediction
+            print("prediction[-1]")
+            vec.print_matrix(prediction[-1])
+            print("p[0][0]:")
+            print(vec.from_vector(p[0][0]))
+            print("p[0][-1]:")
+            print(vec.from_vector(p[0][-1]))
         class_prediction = net.predict_classes(current,batch_size=len(current[0]),verbose=0)
         #print("** C 0 -1: '", [vec.from_vector(list(c)) for c in current[0]],"'  **")
         new_current = []
@@ -380,158 +434,6 @@ def predict_100(net,vectorizer,X,y):
     if outfile:
         outfile.write("\n\n"+result+"\n")
     print("(rand factor was {})".format(static_factor))
-
-
-# ###### GENERATING SAMPLES ##############
-def run_test(net, vectorizer):
-    txt = ""
-    result = vectorizer.to_matrix(". ")[0]
-    num = 0
-    sample = ""
-
-    # # initially, generate a sentence so we don't start in the middle of one
-    txt = ""
-    # net.reset()
-    iter = 0
-    while iter < 1000 and not "." in txt and not "!" in txt and not "?" in txt:
-        # ####### TODO ###########
-        result = net.activate(result)
-
-        txt = vectorizer.from_vector(result)
-        print(iter, "\t", txt, "\r", end="")
-        iter += 1
-    print("")
-
-    # # now, loop over activations until we have enough
-    while 1:
-        # ####### TODO ###########
-        # print(num,end="")
-        stdout.flush()
-        try:
-            # print(output_2_char(result[:len(CHARS)-1]))
-            pass
-        except:
-            print("Error! {}".format(result))
-        num += 1
-
-        new_result = net.activate(result)
-
-        arr = [float(i) for i in new_result]
-        txt = vectorizer.from_vector(arr)
-        # print(txt,end="")
-        sample += txt
-        stdout.flush()
-
-        # result= [ x + random()*NOISE_FACTOR for x in new_result ]
-        result = [x + x * random() * 0.1 for x in new_result]
-
-        if CLEAN_RESULT:
-            result = vectorizer.vector(txt)
-            cleaned = []
-            for item in new_result:
-                if item > 0.5:
-                    cleaned.append(1.0)
-                else:
-                    cleaned.append(0.0)
-            result = cleaned
-
-        # print("Len result: {}".format(len(result)))
-        if num > 300:
-            break
-        if num > 120:
-            if " " in txt:
-                break
-        if len(sample) > 20:
-            if "." in txt:
-                break
-    # print("--->",sample)
-    return sample + '.'
-
-
-def make_net(in_size, out_size, hidden_size=20):
-    model = Sequential()
-    # model.add(LSTM(input_dim = in_size, output_dim = in_size, init="uniform", activation = "sigmoid", return_sequences=True))
-    model.add(LSTM(input_dim=in_size, output_dim=int(hidden_size/2), init="glorot_normal", return_sequences=True))
-    model.add(Dropout(0.3))
-    model.add(LSTM(input_dim=int(hidden_size/2), output_dim=hidden_size, init="glorot_normal", return_sequences=True))
-    model.add(Dropout(0.3))
-
-    #model.add(LSTM(input_dim=hidden_size, output_dim=hidden_size, init="glorot_normal"))
-    #model.add(Dropout(0.3))
-
-    #model.add(Dense(input_dim=hidden_size, output_dim=out_size, init="glorot_normal", activation="softmax"))
-    model.add(TimeDistributedDense(input_dim=hidden_size, output_dim=out_size, init="glorot_normal"))
-    model.add(Activation('softmax'))
-
-    # model.add(Dense(input_dim = 5, output_dim = 1, init = "uniform", activation = "tanh"))
-    print("Compiling net..with {} input, {} outputs, {} hidden please hold!".format(in_size, out_size, hidden_size))
-    # model.compile(loss = "mean_squared_error", optimizer = "rmsprop",class_mode="binary")
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop', class_mode="binary")  # or binary
-    return model
-
-
-
-def redditor_text(redditor, amount=50, justonerandom=False):
-    import praw
-
-    r = praw.Reddit("LSTM test")
-    me = r.get_redditor(redditor)
-    # print me
-    all_comments = me.get_comments(limit=amount)
-    txt = ""
-    if justonerandom:
-        from random import randint
-
-        comment_no = randint(0, amount - 1)
-        return [c for c in all_comments][comment_no].body
-    for c in all_comments:
-        txt += "#_BEGIN_# " + c.body + " #_END_# \n\n"
-
-    if REDDIT_MODE == "TEXT":
-        if type(txt) == str: # python3
-            #txt = txt.encode('ascii','xmlcharrefreplace').decode()
-            txt = txt.encode('ascii','xmlcharrefreplace').decode()
-        else:
-            txt = txt.encode('utf-8', errors='xmlcharrefreplace')
-        return txt
-    elif REDDIT_MODE == "WORDS":
-        for item in "*":
-            txt=txt.replace(item,"")
-        for item in "\n,;":
-            txt=txt.replace(item," "+item+" ")
-        for item in "!?.:":
-            txt=txt.replace(item+" "," "+item+" ")
-
-        ## TODO : Test!!
-        uni = str(txt.encode('utf-8', errors='replace'))
-        ## TODO might have to uni = str(uni)
-        return [x+" " for x in uni.split(" ")]
-    else:
-        raise ValueError("Need to specify REDDIT_MODE as TEXT or WORDS")
-
-
-def get_input_text(filename, redditor, train_len):
-    input_text="#FAILED_READING_FILE<{}>#".format(filename)
-    if filename:
-        with open(filename) as f:
-            input_text = f.read()
-    else:
-        input_text = redditor_text(redditor,100)
-
-    start = int(random() * (len(input_text) - train_len - 100))
-    try:
-        start = input_text.index(".", start) + 1
-        input_text = input_text.strip()
-    except:
-        start = 0
-    pruned = input_text[start:start + train_len]
-    try:
-        pruned = ".".join(pruned.split(".")[:-1]) + "."
-        pruned = pruned.strip()
-    except:
-        pass
-    # print("Pruned:",pruned)
-    return input_text, pruned
 
 
 def run():
@@ -629,6 +531,8 @@ def run():
     net.fit(X, y, nb_epoch=1, batch_size=WINDOW_LEN, show_accuracy=True, validation_split=0.1, verbose=1)
 
     zipped = list(zip(X, y))
+    train_epochs=1.0
+    trained_amount=1.0
     for i in range(10000):
         # print("############# Predicting! iteration ", i)
         # print("############# Predicting! iteration ", i)
@@ -654,10 +558,13 @@ def run():
 
         #fit for 15 seconds
         initial_time = time()
-        SECONDS = 15
-        print("Fitting for at least 15 seconds..")
+        SECONDS = 30
+        print("Fitting for at least {} seconds..".format(SECONDS))
+        train_epochs =int(max(1,0.5*trained_amount + 0.5*train_epochs))
+        trained_amount=0
         while time() < initial_time + SECONDS:
-            net.fit(X, y, nb_epoch=1, batch_size=WINDOW_LEN, show_accuracy=True, validation_split=0.15, verbose=1)
+            trained_amount+=train_epochs
+            net.fit(X, y, nb_epoch=train_epochs, batch_size=WINDOW_LEN, show_accuracy=True, validation_split=0.15, verbose=1)
 
         # print(run_test(net,v))
 

@@ -68,10 +68,10 @@ class Vectorizer:
 
     def print_matrix(self,matrix):
         items=self.from_matrix(matrix)
-        print("Matrix with {} items".format(len(items)))
+        print("Matrix with {} items: <".format(len(items)),end="")
         for item in items:
             print(item,end="")
-        print()
+        print(">")
 
     def from_matrix(self,matrix):
         """Generate a one-hot matrix from a sequence of items"""
