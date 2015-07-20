@@ -21,7 +21,9 @@ def redditor_text(redditor, amount=50, justonerandom=False, REDDIT_MODE='TEXT'):
         ## TODO ## change this to html.encode!!
         if type(txt) == str: # python3
             #txt = txt.encode('ascii','xmlcharrefreplace').decode()
-            txt = txt.encode('ascii','xmlcharrefreplace').decode()
+            #txt = txt.encode('ascii','xmlcharrefreplace').decode()
+            import html
+            txt = html.encode(txt)
         else:
             txt = txt.encode('utf-8', errors='xmlcharrefreplace')
         return txt

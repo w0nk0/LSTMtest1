@@ -32,11 +32,11 @@ try:
 except:
     print("No file output")
 
-WINDOW_LEN = 20 # 50
+WINDOW_LEN = 30 # 50
 TRAIN_LEN = 350 # 15000
-HIDDEN_NEURONS = 100 #400
+HIDDEN_NEURONS = 400 #400
 TEXT_FILE = None #"rddt-de-300.cache"# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
-REDDITOR = "epsenohyeah" # None # "pineconez"
+REDDITOR = "tsukino_usako" # None # "pineconez"
 REDDIT_MODE = "TEXT" # TEXT or WORDS
 
 MINIBATCH = 500
@@ -325,16 +325,16 @@ def run_test(net, vectorizer):
 def make_net(in_size, out_size, hidden_size=20):
     model = Sequential()
     # model.add(LSTM(input_dim = in_size, output_dim = in_size, init="uniform", activation = "sigmoid", return_sequences=True))
-    model.add(LSTM(input_dim=in_size, output_dim=int(hidden_size/2), init="glorot_normal", return_sequences=True))
-    model.add(Dropout(0.3))
-    model.add(LSTM(input_dim=int(hidden_size/2), output_dim=hidden_size, init="glorot_normal", return_sequences=True))
-    model.add(Dropout(0.3))
+    model.add(LSTM(input_dim=in_size, output_dim=int(hidden_size),  return_sequences=True))
+    model.add(Dropout(0.25))
+    model.add(LSTM(input_dim=int(hidden_size), output_dim=hidden_size,  return_sequences=True))
+    model.add(Dropout(0.2))
 
     #model.add(LSTM(input_dim=hidden_size, output_dim=hidden_size, init="glorot_normal"))
     #model.add(Dropout(0.3))
 
     #model.add(Dense(input_dim=hidden_size, output_dim=out_size, init="glorot_normal", activation="softmax"))
-    model.add(TimeDistributedDense(input_dim=hidden_size, output_dim=out_size, init="glorot_normal"))
+    model.add(TimeDistributedDense(input_dim=hidden_size, output_dim=out_size))
     model.add(Activation('softmax'))
 
     # model.add(Dense(input_dim = 5, output_dim = 1, init = "uniform", activation = "tanh"))
@@ -342,6 +342,30 @@ def make_net(in_size, out_size, hidden_size=20):
     # model.compile(loss = "mean_squared_error", optimizer = "rmsprop",class_mode="binary")
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop', class_mode="binary")  # or binary
     return model
+
+
+def get_input_text(filename, redditor, train_len):
+    input_text="#FAILED_READING_FILE<{}>#".format(filename)
+    if filename:
+        with open(filename) as f:
+            input_text = f.read()
+    else:
+        input_text = redditor_text(redditor,100)
+
+    start = int(random() * (len(input_text) - train_len - 100))
+    try:
+        start = input_text.index(".", start) + 1
+        input_text = input_text.strip()
+    except:
+        start = 0
+    pruned = input_text[start:start + train_len]
+    try:
+        pruned = ".".join(pruned.split(".")[:-1]) + "."
+        pruned = pruned.strip()
+    except:
+        pass
+    # print("Pruned:",pruned)
+    return input_text, pruned
 
 
 def predict_100(net,vectorizer,X,y):
@@ -357,7 +381,7 @@ def predict_100(net,vectorizer,X,y):
 
     print("Shapes: X", X.shape, "y", y.shape)
     print("X - {} entries".format(len(X)))
-    print("Shape X[0]", X[0].shape)
+    print("x[0]", X[0].shape)
 
     from random import randint
     vec = vectorizer
@@ -391,18 +415,18 @@ def predict_100(net,vectorizer,X,y):
         if x < 1:
             print("\n","-" * 40)
             p=prediction
-            print("prediction[0]")
-            vec.print_matrix(prediction[0])
-            print("prediction[-1]")
-            vec.print_matrix(prediction[-1])
-            print("p[0][0]:")
-            print(vec.from_vector(p[0][0]))
-            print("p[0][-1]:")
-            print(vec.from_vector(p[0][-1]))
-            print("p[-1][0]:")
-            print(vec.from_vector(p[-1][0]))
-            print("p[-1][-1]:")
-            print(vec.from_vector(p[-1][-1]))
+            # print("prediction[0]")
+            # vec.print_matrix(prediction[0])
+            # print("prediction[-1]")
+            # vec.print_matrix(prediction[-1])
+            # print("p[0][0]:")
+            # print(vec.from_vector(p[0][0]))
+            # print("p[0][-1]:")
+            # print(vec.from_vector(p[0][-1]))
+            # print("p[-1][0]:")
+            # print(vec.from_vector(p[-1][0]))
+            # print("p[-1][-1]:")
+            # print(vec.from_vector(p[-1][-1]))
         class_prediction = net.predict_classes(current,batch_size=len(current[0]),verbose=0)
         #print("** C 0 -1: '", [vec.from_vector(list(c)) for c in current[0]],"'  **")
         new_current = []
