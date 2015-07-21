@@ -6,10 +6,10 @@ class Fakemodel:
         self.data_len=0
         self.realmodel = realmodel
 
-    def compile(loss,optimizer):
+    def compile(optimizer,loss):
         print("FAKE_COMPILING")
         if self.realmodel:
-            self.realmodel.compile(loss,optimizer)
+            self.realmodel.compile(optimizer=optimier,loss=loss)
 
     def fit(self,X,y,nb_epoch=1,batch_size=128):
         sleep(nb_epoch)
