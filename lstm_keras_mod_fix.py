@@ -5,6 +5,14 @@ from keras.layers.recurrent import LSTM
 from keras.datasets.data_utils import get_file
 import numpy as np
 import random, sys
+import html # for .escape
+from rddt import redditor_text
+from markovtools import FlatSubreddit
+
+import argparse
+
+import logging
+warn = logging.warning
 
 '''
     Example script to generate text from Nietzsche's writings.
@@ -15,34 +23,93 @@ import random, sys
     If you try this script on new data, make sure your corpus
     has at least ~100k characters. ~1M is better.
 '''
+parser = argparse.ArgumentParser("Keras' demo LSTM generation")
+arglist = "--redditor --redditorposts --subreddit"
+for arg in arglist.split(" "):
+    parser.add_argument(arg)
+arglist = "--subredditposts --sentencelen --sentencestep --hidden"
+for arg in arglist.split(" "):
+    parser.add_argument(arg,type=int)
 
-stop_production_strings = ['! ','? ','. ','_END_','\n\n']
-min_production_length = 50
+args = parser.parse_args()
 
-from rddt import redditor_text
+stop_production_strings = ['! ','? ','. ','#_E','\n\n']
+min_production_length = 40
 
-redditor = "pineconez"
+REDDIT_MODE = "TEXT"
+
+subreddit = args.subreddit
+subreddit_posts = args.subredditposts or 100
+redditor = args.redditor
+redditor_posts = args.redditorposts or 100
+HIDDEN_NEURONS = args.hidden or 300
+maxlen = args.sentencelen or 16
+step = args.sentencestep or 3
+
+def save_weights(model,fname):
+    """saves models weights into File speicified by fname"""
+    from pickle import dumps
+    weight_str = dumps(model.get_weights())
+    try:
+        with open(weight_file+'.wpkls',"wb")  as f:
+            f.write(weight_str)
+        return True
+    except:
+        warn('Couldnt write weights to {}'.format(weight_file))
+
+def load_weights(model,fname):
+    """ sets weights from file, returns model"""
+    from pickle import loads
+    try:
+        with open(weight_file+'.wpkls',"rb")  as f:
+            wstr=f.read()
+        w = loads(wstr)
+        model.set_weights(w)
+        return model
+    except:
+        warn('Couldnt write weights to ',weight_file)
+
+
+def recode(u):
+    import sys
+    try:
+        cp = sys.stdout.encoding
+        u = u.replace('ä','ae')
+        u = u.replace('ö','oe')
+        u = u.replace('ü','ue')
+        u = u.replace('ß','ss')
+        u = u.replace('Ä','Ae')
+        u = u.replace('Ü','Ue')
+        s = u.encode(cp,errors='xmlcharrefreplace').decode(cp)
+        return s
+    except:
+        return str(str(u).encode(errors='ignore'))
+
+print(recode("häßlich äöüß ♣◙"))
+
+#text = str(str(FlatSubreddit(subreddit,subreddit_posts,True).text()).encode())
+if subreddit:
+    text = recode(FlatSubreddit(subreddit,subreddit_posts,True).text())
+elif redditor:
+    text = redditor_text(redditor,redditor_posts)
+else:
+    text = "#_B_# Holy diver. You've been down to long in the midnight sea. #_B_# Oh what's becoming of me. #_E_# " * 10
 
 #text = open("rddt-de-300.cache").read().lower()
 #text = text[:400]
-
-#REDDIT_MODE = "TEXT"
-
-#text = "Holy diver. You've been down to long in the midnight sea. Oh what's becoming of me. _END_ " * 10
-text = redditor_text("epsenohyeah",50)
 #text = open("lyrics.txt").read()
 #text = open("lstm_keras_mod_fix.py").read()
+
 print('corpus length:', len(text))
+print('corpus [-70:]',text[-70:])
 
 chars = set(text)
-print('total chars:', len(chars))
+print('total chars in vectorizer:', len(chars))
 
 char_indices = dict((c, i) for i, c in enumerate(chars))
 indices_char = dict((i, c) for i, c in enumerate(chars))
 
 # cut the text in semi-redundant sequences of maxlen characters
-maxlen = 24
-step = 3
 sentences = []
 next_chars = []
 for i in range(0, len(text) - maxlen, step):
@@ -61,9 +128,8 @@ for i, sentence in enumerate(sentences):
 
 # build the model: 2 stacked LSTM
 
-HIDDEN_NEURONS=400
 
-print('Build model...')
+print('Build model... ',len(chars),HIDDEN_NEURONS,len(chars))
 model = Sequential()
 model.add(LSTM(len(chars), HIDDEN_NEURONS, return_sequences=True))
 model.add(Dropout(0.2))
@@ -73,6 +139,9 @@ model.add(Dense(HIDDEN_NEURONS, len(chars)))
 model.add(Activation('softmax'))
 
 model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+
+weight_file = 'weights-in{}-hid{}'.format(len(chars),HIDDEN_NEURONS)
+save_weights(model,weight_file)
 
 ##### FAKE##########   ####
 ##### FAK            ##    ##
@@ -114,7 +183,7 @@ def w0nk0sample(a,diversity=0.8):
 
 def make_seed(text, maxlen, splitter=". ",from_reddit=False):
     if from_reddit:
-        return rddt.redditor_text(redditor,10,True)
+        return rddt.redditor_text(redditor,20,True)
     if splitter in text:
         parts = text.split(splitter)
         part = random.randint(0,len(parts)-1)
@@ -132,7 +201,7 @@ def make_seed(text, maxlen, splitter=". ",from_reddit=False):
 
     return sentence
 
-train_seconds=20.0
+train_seconds=90.0
 train_epochs=1
 for iteration in range(1, 5000):
     print()
@@ -142,16 +211,18 @@ for iteration in range(1, 5000):
     start_time=time()
     trained = 0
     while time()<start_time+train_seconds:
-        model.fit(X, y, batch_size=128, nb_epoch=train_epochs)
+        model.fit(X, y, batch_size=min(256,len(X)), nb_epoch=train_epochs)
         trained += train_epochs
     train_epochs = max(1,int(trained / (time()-start_time) * (train_seconds+2)))
 
-    seed = make_seed(text, maxlen, '. ')
+    if weight_file:
+        save_weights(model,weight_file)
 
-    for diversity in [ 0.4, 0.6, 0.701, 0.8]:
+    seed = make_seed(text, maxlen, '. ', redditor != None)
+    for diversity in [ 0.05, 0.2, 0.401, 0.5]:
         print()
         print('----- diversity:', diversity)
-        if diversity == 0.701:
+        if diversity == 0.401:
             sample_func = sample
             print("\n------ Classic sampling")
         else:
@@ -184,11 +255,15 @@ for iteration in range(1, 5000):
             generated += next_char
             sentence = sentence[1:] + next_char
             whole_sentence += next_char
+
+            writable = whole_sentence.encode(sys.stdout.encoding,errors='xmlcharrefreplace')
             sys.stdout.write(next_char)
             sys.stdout.flush()
             # exit if we find a temrination string in the sentence!
-            if max([x in whole_sentence[min_production_length:] for x in stop_production_strings]):
-                break
+            for x in stop_production_strings:
+                if x in writable.decode('utf-8',errors='ignore'):
+                    break
         print()
-        with open(output_file_name,"at") as out_file:
-            out_file.write("Iteration {} - ".format(iteration)+whole_sentence+"\n")
+        with open(output_file_name,"ab") as out_file:
+            output = "Iteration {} - ".format(iteration) + writable.decode('ascii',errors='ignore') + "\n"
+            out_file.write(output.encode('utf-8',errors='replace'))
