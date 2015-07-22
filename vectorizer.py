@@ -4,6 +4,25 @@ class Vectorizer:
         self.dictionary=[]
         self._new_feed(fulltext,cutoff)
 
+    def save(self,binary_file_name):
+        from pickle import dump
+        with open(binary_file_name,"wt") as outfile:
+            dump(self.dictionary,outfile)
+            print('Dictionary pickled into {}'.format(binary_file_name))
+            return True
+        print('Failed to pickle to  {}'.format(binary_file_name))
+        return False
+
+    def load(self,binary_file_name):
+        from pickle import load
+        with open(binary_file_name,"rt") as infile:
+            self.dictionary = load(infile)
+            self.vector_len = len(self.dictionary)
+            print('Dictionary loaded from {}'.format(binary_file_name))
+            return True
+        print('Failed to load from {}'.format(binary_file_name))
+        return False
+
     def detokenize(self, token):
         return ""+token
 
