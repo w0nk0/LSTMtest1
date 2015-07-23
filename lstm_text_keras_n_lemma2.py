@@ -307,7 +307,7 @@ def make_net(in_size, out_size, hidden_size=20):
     model.add(Dropout(0.25))
     model.add(LSTM(input_dim=hidden_size, output_dim=int(hidden_size),  return_sequences=False))
 
-    #model.add(Dropout(0.1))
+    model.add(Dropout(0.25))
 
     #model.add(LSTM(input_dim=hidden_size, output_dim=hidden_size, init="glorot_normal"))
     #model.add(Dropout(0.3))
@@ -398,7 +398,7 @@ def predict_100(net,vectorizer,X,y,randomness=0.2, custom_primer=None):
     print_offset = 0
     per_line = 80
     for x in range(150):
-        if len(result)>=per_line:
+        if len(result) >= per_line + print_offset:
             print("")
             print_offset += per_line
         offset_result = result[print_offset:].replace("\n","\\n")
