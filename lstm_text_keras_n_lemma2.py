@@ -348,9 +348,9 @@ def get_input_text(filename, redditor, train_len, posts=200):
     return input_text, pruned
 
 
-def predict_100(net,vectorizer,X,y,randomness=0.2):
+def predict_100(net,vectorizer,X,y,randomness=0.2, custom_primer=None):
     banner("Generating")
-    random_factor=static_factor=randomness+random()*(1-randomness)/2
+    random_factor=static_factor=randomness+random()*0.25
     print("--------> Using static factor {} <--------".format(static_factor))
     def randomized(vector, static_factor=0.5):
         a=[random()+static_factor for x in range(len(vector))]
@@ -364,7 +364,6 @@ def predict_100(net,vectorizer,X,y,randomness=0.2):
     vec = vectorizer
 
     #current = [[vec.vector(choice(vec.dictionary)),vec.vector(choice(vec.dictionary))]]
-
     #primer="""It's an excuse.  If your weight is the fault of a disease, then you don't feel at fault for it. It's just a way people try to let go of the guilt they feel for their weight."""
     #mat=vectorizer.to_matrix(primer)
     #X,y = make_dataset_n(mat,vec,WINDOW_LEN)
@@ -377,8 +376,14 @@ def predict_100(net,vectorizer,X,y,randomness=0.2):
         print("Shape primer X[0]", X[0].shape)
         print("len(X)",len(X))
 
-    idx = randint(0,len(X)-2)
-    current = np.array([X[idx]])
+    if custom_primer:
+        primer = " " * 100 + "#_B_#" + custom_primer + "#_E_#"
+        primer_mat = vec.to_matrix(primer[:WINDOW_LEN])
+        P,_ = make_dataset_single_predict(primer_mat, vec, WINDOW_LEN)
+        current = np.array([primer_mat])
+    else:
+        idx = randint(0,len(X)-2)
+        current = np.array([X[idx]])
 
     #print ("Initial input (current):", current)
     #for i in current[0]:
@@ -390,8 +395,14 @@ def predict_100(net,vectorizer,X,y,randomness=0.2):
         result = "".join([vec.from_vector(x) for x in current[0]])+" -> "
     except:
         result = "## "
+    print_offset = 0
+    per_line = 80
     for x in range(150):
-        print("\r",result.replace("\n","\\n")[-80:],end="")
+        if len(result)>=per_line:
+            print("")
+            print_offset += per_line
+        offset_result = result[print_offset:].replace("\n","\\n")
+        print("\rOutput:",offset_result,end="")
         stdout.flush()
         #print("Shape:",current.shape)
         prediction = net.predict(current,verbose=0) #,batch_size=len(current[0])
@@ -472,7 +483,7 @@ def predict_100(net,vectorizer,X,y,randomness=0.2):
     if outfile:
         outfile.write("\n\n"+result+"\n")
     print("(rand factor was {})\n".format(static_factor))
-    banner(" ++## RESULT ##++")
+    banner("end predict")
 
 def save_weights(model,fname):
     """saves models weights into File speicified by fname"""
@@ -511,7 +522,7 @@ def run():
     banner("--")
     banner("Run() starting, getting data..")
     input_text, pruned = get_input_text(TEXT_FILE, REDDITOR, TRAIN_LEN, posts=NUM_POSTS)
-    with open("run{}-input_text.txt","wt") as f:
+    with open("run{}-input_text.txt".format(RUN_ID),"wt") as f:
         f.write(input_text)
  
     #input_text = pruned = "abbcccdddd eeeeeffffff abc def? " * 8
