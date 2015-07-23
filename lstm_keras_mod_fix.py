@@ -8,6 +8,8 @@ import random, sys
 import html # for .escape
 from rddt import redditor_text
 from markovtools import FlatSubreddit
+import pickle
+import time
 
 import argparse
 
@@ -45,6 +47,8 @@ redditor_posts = args.redditorposts or 100
 HIDDEN_NEURONS = args.hidden or 300
 maxlen = args.sentencelen or 16
 step = args.sentencestep or 3
+
+RUN_ID = int(time.time() % 1000)
 
 def save_weights(model,fname):
     """saves models weights into File speicified by fname"""
@@ -89,10 +93,13 @@ print(recode("häßlich äöüß ♣◙"))
 
 #text = str(str(FlatSubreddit(subreddit,subreddit_posts,True).text()).encode())
 if subreddit:
+    print('Reading {} posts from /r/{}'.format(subreddit_posts,subreddit))
     text = recode(FlatSubreddit(subreddit,subreddit_posts,True).text())
 elif redditor:
+    print('Reading {} posts from /r/{}'.format(redditor_posts,redditor))
     text = redditor_text(redditor,redditor_posts)
 else:
+    print('Using dummy text for training.')
     text = "#_B_# Holy diver. You've been down to long in the midnight sea. #_B_# Oh what's becoming of me. #_E_# " * 10
 
 #text = open("rddt-de-300.cache").read().lower()
@@ -108,6 +115,16 @@ print('total chars in vectorizer:', len(chars))
 
 char_indices = dict((c, i) for i, c in enumerate(chars))
 indices_char = dict((i, c) for i, c in enumerate(chars))
+
+with open('run{}-chars-in{}-hid{}.pkl'.format(RUN_ID,len(chars),HIDDEN_NEURONS),'wb') as f:
+    pickle.dump(chars,f)
+    print('Pickled chars dictionary into {}.'.format(f.name))
+
+with open('run{}-text-in{}-hid{}.pkl'.format(RUN_ID,len(chars),HIDDEN_NEURONS),'wb') as f:
+    pickle.dump(text,f)
+    print('Pickled text into {}.'.format(f.name))
+
+
 
 # cut the text in semi-redundant sequences of maxlen characters
 sentences = []
@@ -140,7 +157,7 @@ model.add(Activation('softmax'))
 
 model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 
-weight_file = 'weights-in{}-hid{}'.format(len(chars),HIDDEN_NEURONS)
+weight_file = 'run{}-weights-in{}-hid{}'.format(RUN_ID,len(chars),HIDDEN_NEURONS)
 save_weights(model,weight_file)
 
 ##### FAKE##########   ####
@@ -157,8 +174,7 @@ save_weights(model,weight_file)
 ##### FAKE ##########
 ##### FAKE ##########
 
-from time import time
-output_file_name="generated-Neu{}maxl{}time{}.txt".format(HIDDEN_NEURONS,maxlen,int(time() % 1000))
+output_file_name="run{}-generated-Neu{}maxl{}.txt".format(RUN_ID,HIDDEN_NEURONS,maxlen)
 print("Will write generated text to {}".format(output_file_name))
 
 # helper function to sample an index from a probability array
