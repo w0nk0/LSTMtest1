@@ -12,7 +12,11 @@ from time import time
 
 import numpy as np
 from optparse import OptionParser
-from rddt import redditor_text
+import time
+import argparse 
+from random import randint
+
+from rddt import redditor_text #, FlatReddit
 
 from keras.preprocessing import sequence
 from keras.optimizers import RMSprop, SGD
@@ -25,28 +29,48 @@ from keras.datasets import imdb
 
 from vectorizer import Vectorizer, VectorizerTwoChars
 
+################ ARGUMENTS PARSING ################
+
+parser = argparse.ArgumentParser("Keras' demo LSTM generation")
+arglist = "--redditor --subreddit --textfile --loadweightsfile"
+for arg in arglist.split(" "):
+    parser.add_argument(arg)
+arglist = "--subredditposts --redditorposts --sentencelen --sentencestep --hidden --trainlen"
+for arg in arglist.split(" "):
+    parser.add_argument(arg,type=int)
+args = parser.parse_args()
+
+################ INIT GLOBAL VARIABLES ################
+
+RUN_ID = int(time.time() % 1000)
+WINDOW_LEN = 40 # 50
+TRAIN_LEN = args.trainlen or 200000 # 15000
+HIDDEN_NEURONS = args.hidden or 512 # 400
+TEXT_FILE = args.textfile #"rddt-de-300.cache"# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
+REDDITOR = args.redditor or "w0nk0" # None # "pineconez"
+REDDIT_MODE = "TEXT" # TEXT or WORDS
+NUM_POSTS = args.redditorposts or 100 #
+load_weights_file = args.loadweightsfile
+
+
 outfile = None
+from time import time
+output_file_name="run{}-generated-Neu{}-winlen{}.txt".format(RUN_ID,int(time() % 10000),HIDDEN_NEURONS,WINDOW_LEN)
 try:
-    outfile = open("generated.txt", "at")
-    print("File for output opened")
+    outfile = open(output_file_name, "at")
+    print("Will write generated text to {}".format(output_file_name))
 except:
     print("No file output")
 
-WINDOW_LEN = 30 # 50
-TRAIN_LEN = 350 # 15000
-HIDDEN_NEURONS = 400 #400
-TEXT_FILE = None #"rddt-de-300.cache"# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
-REDDITOR = "tsukino_usako" # None # "pineconez"
-REDDIT_MODE = "TEXT" # TEXT or WORDS
-
-MINIBATCH = 500
 
 ## obsolete
+
+#MINIBATCH = 500
 # CHARS = " abcdefghijklmnopqrstuvxyz.,!?\n" +"abcdefghijklmnopqrstuvxyz".swapcase()
-CHARS = " abcdefghijklmnopqrstuvxyz.,!?':/()-*1234567890\n" + "abcdefghijklmnopqrstuvxyz".swapcase()
-NOISE_FACTOR = 0.0000002
-DELTA0INIT = 0.24
-CLEAN_RESULT = True
+#CHARS = " abcdefghijklmnopqrstuvxyz.,!?':/()-*1234567890\n" + "abcdefghijklmnopqrstuvxyz".swapcase()
+#NOISE_FACTOR = 0.0000002
+#DELTA0INIT = 0.24
+#CLEAN_RESULT = True
 # RETRAIN_FREQUENCY = int(16/EPOCHS_PER_CYCLE/CYCLES)
 
 
@@ -144,6 +168,9 @@ class WordVectorizer(RandomVectorizer):
     def detokenize(self, items):
         return " " + items
 
+def banner(txt="",width=70, dash="-"):
+    dashes = int((width - len(txt) -2) /2)
+    print("\n",dash * dashes,txt, dash * dashes)
 
 def plot_result(data, title):
     import matplotlib.pyplot as plt
@@ -189,7 +216,7 @@ def make_dataset(data_matrix, v):
     return np.array(in_batch), np.array(out_batch)
 
 
-def make_dataset_n(data_matrix, v, length):
+def make_dataset_withtime(data_matrix, v, length):
     in_batch, out_batch = [], []
     for num in range(len(data_matrix) - length - 1):  # )(data_matrix[length:-1]):
         # 1 line = 1 character_classification_vector
@@ -201,6 +228,21 @@ def make_dataset_n(data_matrix, v, length):
 
         in_batch.append(np.array(input))
         out_batch.append(output)
+
+    return np.array(in_batch), np.array(out_batch)
+
+def make_dataset_single_predict(data_matrix, v, length):
+    in_batch, out_batch = [], []
+    for num in range(0,len(data_matrix) - length - 1,2):  # )(data_matrix[length:-1]):
+        # 1 line = 1 character_classification_vector
+        input = []  # , input = [olditem, item
+        output= []
+        for x in range(length):
+            input.append(data_matrix[num + x])
+            output.append(data_matrix[num+x+1])
+
+        in_batch.append(np.array(input))
+        out_batch.append(output[-1])
 
     return np.array(in_batch), np.array(out_batch)
 
@@ -257,84 +299,22 @@ def vector_randomized(vector, static_factor=0.5):
     return randomizered
 
 # ###### GENERATING SAMPLES ##############
-def run_test(net, vectorizer):
-    txt = ""
-    result = vectorizer.to_matrix(". ")[0]
-    num = 0
-    sample = ""
-
-    # # initially, generate a sentence so we don't start in the middle of one
-    txt = ""
-    # net.reset()
-    iter = 0
-    while iter < 1000 and not "." in txt and not "!" in txt and not "?" in txt:
-        # ####### TODO ###########
-        result = net.activate(result)
-
-        txt = vectorizer.from_vector(result)
-        print(iter, "\t", txt, "\r", end="")
-        iter += 1
-    print("")
-
-    # # now, loop over activations until we have enough
-    while 1:
-        # ####### TODO ###########
-        # print(num,end="")
-        stdout.flush()
-        try:
-            # print(output_2_char(result[:len(CHARS)-1]))
-            pass
-        except:
-            print("Error! {}".format(result))
-        num += 1
-
-        new_result = net.activate(result)
-
-        arr = [float(i) for i in new_result]
-        txt = vectorizer.from_vector(arr)
-        # print(txt,end="")
-        sample += txt
-        stdout.flush()
-
-        # result= [ x + random()*NOISE_FACTOR for x in new_result ]
-        result = [x + x * random() * 0.1 for x in new_result]
-
-        if CLEAN_RESULT:
-            result = vectorizer.vector(txt)
-            cleaned = []
-            for item in new_result:
-                if item > 0.5:
-                    cleaned.append(1.0)
-                else:
-                    cleaned.append(0.0)
-            result = cleaned
-
-        # print("Len result: {}".format(len(result)))
-        if num > 300:
-            break
-        if num > 120:
-            if " " in txt:
-                break
-        if len(sample) > 20:
-            if "." in txt:
-                break
-    # print("--->",sample)
-    return sample + '.'
-
 
 def make_net(in_size, out_size, hidden_size=20):
     model = Sequential()
     # model.add(LSTM(input_dim = in_size, output_dim = in_size, init="uniform", activation = "sigmoid", return_sequences=True))
     model.add(LSTM(input_dim=in_size, output_dim=int(hidden_size),  return_sequences=True))
     model.add(Dropout(0.25))
-    model.add(LSTM(input_dim=int(hidden_size), output_dim=hidden_size,  return_sequences=True))
-    model.add(Dropout(0.2))
+    model.add(LSTM(input_dim=hidden_size, output_dim=int(hidden_size),  return_sequences=False))
+
+    #model.add(Dropout(0.1))
 
     #model.add(LSTM(input_dim=hidden_size, output_dim=hidden_size, init="glorot_normal"))
     #model.add(Dropout(0.3))
 
     #model.add(Dense(input_dim=hidden_size, output_dim=out_size, init="glorot_normal", activation="softmax"))
-    model.add(TimeDistributedDense(input_dim=hidden_size, output_dim=out_size))
+    #model.add(TimeDistributedDense(input_dim=int(hidden_size/2), output_dim=out_size))
+    model.add(Dense(input_dim=int(hidden_size), output_dim=out_size))
     model.add(Activation('softmax'))
 
     # model.add(Dense(input_dim = 5, output_dim = 1, init = "uniform", activation = "tanh"))
@@ -344,13 +324,13 @@ def make_net(in_size, out_size, hidden_size=20):
     return model
 
 
-def get_input_text(filename, redditor, train_len):
+def get_input_text(filename, redditor, train_len, posts=200):
     input_text="#FAILED_READING_FILE<{}>#".format(filename)
     if filename:
         with open(filename) as f:
             input_text = f.read()
     else:
-        input_text = redditor_text(redditor,100)
+        input_text = redditor_text(redditor,posts,False,REDDIT_MODE)
 
     start = int(random() * (len(input_text) - train_len - 100))
     try:
@@ -368,8 +348,9 @@ def get_input_text(filename, redditor, train_len):
     return input_text, pruned
 
 
-def predict_100(net,vectorizer,X,y):
-    random_factor=static_factor=0.2+random()*0.45
+def predict_100(net,vectorizer,X,y,randomness=0.2):
+    banner("Generating")
+    random_factor=static_factor=randomness+random()*(1-randomness)/2
     print("--------> Using static factor {} <--------".format(static_factor))
     def randomized(vector, static_factor=0.5):
         a=[random()+static_factor for x in range(len(vector))]
@@ -379,20 +360,23 @@ def predict_100(net,vectorizer,X,y):
         randomizered = (vector+rands2) * rands
         return randomizered
 
-    print("Shapes: X", X.shape, "y", y.shape)
-    print("X - {} entries".format(len(X)))
-    print("x[0]", X[0].shape)
-
     from random import randint
     vec = vectorizer
+
     #current = [[vec.vector(choice(vec.dictionary)),vec.vector(choice(vec.dictionary))]]
 
     #primer="""It's an excuse.  If your weight is the fault of a disease, then you don't feel at fault for it. It's just a way people try to let go of the guilt they feel for their weight."""
     #mat=vectorizer.to_matrix(primer)
     #X,y = make_dataset_n(mat,vec,WINDOW_LEN)
 
-    print("Shape primer X[0]", X[0].shape)
-    print("len(X)",len(X))
+    if False:
+        print("Shapes: X", X.shape, "y", y.shape)
+        print("X - {} entries".format(len(X)))
+        print("x[0]", X[0].shape)
+
+        print("Shape primer X[0]", X[0].shape)
+        print("len(X)",len(X))
+
     idx = randint(0,len(X)-2)
     current = np.array([X[idx]])
 
@@ -407,28 +391,19 @@ def predict_100(net,vectorizer,X,y):
     except:
         result = "## "
     for x in range(150):
-        print("\r",result.replace("\n"," ")[-60:],end="")
+        print("\r",result.replace("\n","\\n")[-80:],end="")
         stdout.flush()
         #print("Shape:",current.shape)
-        prediction = net.predict(current,batch_size=len(current[0]),verbose=0)
-        p0 = prediction[-1]
+        prediction = net.predict(current,verbose=0) #,batch_size=len(current[0])
+        # input :   X[samples,[timesteps, [onehots,]]]
+        # p  TDD -> X[samples,[timesteps, [onehots,]]]
+        # p D    -> X[samples, [onehots,]]]
+
+        p0 = prediction # [-1]
+
         if x < 1:
             print("\n","-" * 40)
             p=prediction
-            # print("prediction[0]")
-            # vec.print_matrix(prediction[0])
-            # print("prediction[-1]")
-            # vec.print_matrix(prediction[-1])
-            # print("p[0][0]:")
-            # print(vec.from_vector(p[0][0]))
-            # print("p[0][-1]:")
-            # print(vec.from_vector(p[0][-1]))
-            # print("p[-1][0]:")
-            # print(vec.from_vector(p[-1][0]))
-            # print("p[-1][-1]:")
-            # print(vec.from_vector(p[-1][-1]))
-        class_prediction = net.predict_classes(current,batch_size=len(current[0]),verbose=0)
-        #print("** C 0 -1: '", [vec.from_vector(list(c)) for c in current[0]],"'  **")
         new_current = []
 
         if (x % 100) == 99 and False:
@@ -449,14 +424,15 @@ def predict_100(net,vectorizer,X,y):
         except:
             print("Couldn't add '{}' to result".format(txt))
 
-        if x <= 1:
+        if x <= 1 and False:
             print("+" * 40)
             print("input      :",end="")
             vec.print_matrix(current[0])
             print("predicted :",end="")
-            vec.print_matrix(prediction[0])
-            print("newtxt vec :",end="")
-            print([(it,lbl) for it,lbl in zip(p0[-1].round(2),vec.dictionary)])
+            vec.print_matrix(p0)
+            if False:
+                print("newtxt vec :",end="")
+                print([(it,lbl) for it,lbl in zip(p0[-1].round(2),vec.dictionary)])
             print("add char   : <{}>".format(txt))
             print("-> new in  :",end="")
             vec.print_matrix(new_current[-WINDOW_LEN:])
@@ -491,44 +467,79 @@ def predict_100(net,vectorizer,X,y):
             print(class_prediction)
 
     #print("Prediction total:","".join([vec.from_vector(list(p)) for p in prediction]))
-    print("\n\nRESULT:\n", result)
+    banner(" ++## RESULT ##++")
+    print(result.replace('\n',r'\\n'))
     if outfile:
         outfile.write("\n\n"+result+"\n")
-    print("(rand factor was {})".format(static_factor))
+    print("(rand factor was {})\n".format(static_factor))
+    banner(" ++## RESULT ##++")
+
+def save_weights(model,fname):
+    """saves models weights into File speicified by fname"""
+    from pickle import dumps
+    weight_str = dumps(model.get_weights())
+    if not '.' in fname:
+      fname += '.wpkls'
+    try:
+        with open(fname,"wb")  as f:
+            f.write(weight_str)
+        return True
+    except:
+        warn('Couldnt write weights to {}'.format(weight_file))
+
+def load_weights(model,fname):
+    """ sets weights from file, returns model"""
+    from pickle import loads
+    if not '.' in fname:
+        fname += '.wpkls'
+    try:
+        with open(fname,"rb")  as f:
+            wstr=f.read()
+        w = loads(wstr)
+        model.set_weights(w)
+        return model
+    except:
+        warn('Couldnt write weights to ',weight_file)
 
 
 def run():
     # ######################### MAKE TRAINING DATA
     # ######################### MAKE TRAINING DATA
     # ######################### MAKE TRAINING DATA
-
-
     # input_text = "Ein Test-Text, hurra!"
     # pruned = " ".join(input_text.split(" ")[:4])
-
-    input_text, pruned = get_input_text(TEXT_FILE, REDDITOR, TRAIN_LEN)
+    banner("--")
+    banner("Run() starting, getting data..")
+    input_text, pruned = get_input_text(TEXT_FILE, REDDITOR, TRAIN_LEN, posts=NUM_POSTS)
+    with open("run{}-input_text.txt","wt") as f:
+        f.write(input_text)
+ 
+    #input_text = pruned = "abbcccdddd eeeeeffffff abc def? " * 8
 
     print("---------------------\ninput -400:\n", input_text[:400])
     print("---------------------\npruned -400:\n", pruned[:400])
+    
+    print("Total text length: {}, training set {}".format(len(input_text),len(pruned)))
     # v=RandomVectorizer(". "+input_text)
     # v=OneCharacterVectorizer(". "+input_text)
-
     #v = TimeVectorizer2Lemma(input_text) <- for when using REDDIT_MODE="TEXT", not words
 
     LIMIT = 1000
     if REDDIT_MODE == "TEXT" : LIMIT = 100
     print("LIMITING DICTIONARY TO ", LIMIT)
-
+    banner("Vectorizing")
     v = TimeVectorizerNoUnknown(input_text,cutoff=LIMIT)
+    print("Len vectorizer:", len(v.dictionary))
+    print("Saving vectorizer")
+    v.save("run{}-vector.pkl".format(RUN_ID))
+    input_mat = v.to_matrix(pruned)
 
     # V throws ascii/unicode error
     #print("\n",type(v)," Dictionary: {}".format(v.dictionary.encode("ascii",errors="ignore")))
-    print("Len vectorizer:", len(v.dictionary))
     #my=v.to_matrix('my')
     #print("v.to_matrix('my')", my)
     #print("my[0]",v.from_vector_rand_no_dummy(list(my[0]),0.1,unknown_token_value="#?#"))
     #print("my",v.from_vector_rand_no_dummy(list(my),0.1,unknown_token_value="#?#"))
-    from random import randint
     #for _ in range(500):
     #    x=v.vector(input_text[randint(0,len(input_text))])
     #    print(v.from_vector_rand(x,0.5,unknown_token_value="#?#"),end="")
@@ -538,32 +549,39 @@ def run():
     #from time import sleep
     #sleep(4)
     # print("Dictionary:",["".join(str(x)) for x in v.dictionary])
-
-    lemma = choice(v.dictionary)
+    #lemma = choice(v.dictionary)
     # print("dictionary choice:",lemma)
     # print("vector", v.vector(lemma))
     # print("index", v.index(lemma))
-
-    input_mat = v.to_matrix(pruned)
 
     # # check if mapping worksS
     # for num,i in enumerate(input_mat[0:10]):
     # debug_vec_print(v,i,"input[{}]".format(num))
     # print("input_mat[:2] : ",np.array(input_mat[:2]))
 
-    anneal_mat = anneal_matrix(input_mat)
+    #anneal_mat = anneal_matrix(input_mat)
 
     # # check if anneal-mapping works
     # for num,i in enumerate(anneal_mat[0:10]):
     # debug_vec_print(v,i,"input[{}]".format(num))
     # # anneal_mat  # # !!!!!!!!!!!!!!!!!!!!!!
 
+
+    # ##### ###### ###### MAKE NETWORK ###### ###### ######
+    # ##### ###### ###### MAKE NETWORK ###### ###### ######
+    # ##### ###### ###### MAKE NETWORK ###### ###### ######
+    banner("Compiling net")
+    categories = v.len()
+    net = make_net(categories, categories, hidden_size=HIDDEN_NEURONS)
+    banner("Net compiled!")
+    banner("Make dataset..")
     # X,y = make_dataset_n(input_mat,v,WINDOW_LEN)
-    X, y = make_dataset_n(input_mat, v, WINDOW_LEN)
+    X, y = make_dataset_single_predict(input_mat, v, WINDOW_LEN)
     #print("----------X-----------\n", X)
-    print("Shapes: X", X.shape, "y", y.shape)
-    print("X - {} entries".format(len(X)))
-    print("Shape X[0]", X[0].shape)
+    if False:
+        print("Shapes: X", X.shape, "y", y.shape)
+        print("X - {} entries".format(len(X)))
+        print("Shape X[0]", X[0].shape)
 
     if False:
         debug_vec_print(v, X[0][0], "X[0][0]")
@@ -573,7 +591,6 @@ def run():
         debug_vec_print(v, y[0], "y[0]")
         stdout.flush()
 
-
     #print("X[0]")
     #v.print_matrix(X[0])
     #print("y[0]")
@@ -581,15 +598,14 @@ def run():
     from time import sleep
     #sleep(2)
 
-    # ##### ###### ###### MAKE NETWORK ###### ###### ######
-    # ##### ###### ###### MAKE NETWORK ###### ###### ######
-    # ##### ###### ###### MAKE NETWORK ###### ###### ######
-    print("make_net..")
-    categories = v.len()
-    net = make_net(categories, categories, hidden_size=HIDDEN_NEURONS)
+    if load_weights_file:
+        print("Loading weights from {} as per argument!".format(load_weights_file))
+        net = load_weights(net,load_weights_file)
 
     predict_100(net,v,X,y)
+    save_weights(net,'run{}-weights'.format(RUN_ID))
     net.fit(X, y, nb_epoch=1, batch_size=WINDOW_LEN, show_accuracy=True, validation_split=0.1, verbose=1)
+    save_weights(net,'run{}-weights'.format(RUN_ID))
 
     zipped = list(zip(X, y))
     train_epochs=1.0
@@ -598,92 +614,24 @@ def run():
         # print("############# Predicting! iteration ", i)
         # print("############# Predicting! iteration ", i)
         predict_100(net, v, X, y)
+        predict_100(net, v, X, y)
         # make sub-sample of train data and train with it
 
         # Train in mini-batches in stead of fll set? Did I do this because of 32 bit memory limits?
-        samp = sample(list(zipped), min(len(zipped), MINIBATCH))
-        Xpart = np.array([sx for sx, sy in samp])
-        ypart = np.array([sy for sx, sy in samp])
+        # samp = sample(list(zipped), min(len(zipped), MINIBATCH))
+        # Xpart = np.array([sx for sx, sy in samp])
+        # ypart = np.array([sy for sx, sy in samp])
 
         #fit for x seconds
         initial_time = time()
-        SECONDS = 30
-        print("Fitting for at least {} seconds..".format(SECONDS))
+        SECONDS = 90
+        banner("Fitting for at least {} seconds..".format(SECONDS))
         train_epochs =int(max(1,0.5*trained_amount + 0.5*train_epochs))
         trained_amount=0
         while time() < initial_time + SECONDS:
             trained_amount+=train_epochs
-            net.fit(X, y, nb_epoch=train_epochs, batch_size=len(X), show_accuracy=True, validation_split=0.15, verbose=1)
-
-        # print(run_test(net,v))
-
-
-def run_old():
-    return
-
-    # ##### ###### ######  TRAIN ###### ###### ######
-    # ##### ###### ######  TRAIN ###### ###### ######
-    # ##### ###### ######  TRAIN ###### ###### ######
-    EPOCHS = EPOCHS_PER_CYCLE * CYCLES
-
-    errs = []
-    dt0 = DELTA0INIT
-    for i in range(2000):
-        dt0 *= 0.98
-        net, train_errors = train_network(TrainDS, net, EPOCHS, EPOCHS_PER_CYCLE, CYCLES, dt0)
-        errs.extend(train_errors)
-
-        if random() > 0.5:
-            if REDDITOR and not TEXT_FILE:
-                prime_txt = redditor_text(REDDITOR, 20, True)
-            else:
-                first_sentence = [x for x in [pruned.find(" "), pruned.find("."), pruned.find("?"), pruned.find("!")] if
-                                  x > 5]
-                if len(first_sentence):
-                    end = min(first_sentence)
-                else:
-                    end = 20
-                prime_txt = pruned[:end + 1]
-
-            print(u"!!! Priming with ##{}##".format(prime_txt))
-            primer = v.to_matrix(prime_txt)
-            net.reset()
-            for inp in primer:
-                net.activate(inp)
-                # if ". " in v.dictionary:
-                # net.activate(v.to_vector(". "))
-
-        result = run_test(net, v)
-        if type(result) == type(""):
-            result = unicode(result, errors='replace')
-        else:
-            result = result.encode('utf-8', errors='xmlcharreplace')
-
-        print("\n%%%% Epoch, delta0: ", i, dt0)
-        print("--------------------------")
-        try:
-            print(result)
-        except:
-            print("FAILED :(, probably Unicode")
-        print("-------------------------\n")
-        # # new training text
-        if i % RETRAIN_FREQUENCY == RETRAIN_FREQUENCY - 1:
-            print("################## New training set!")
-            if 0:
-                pass
-            else:
-                start = long(random() * (len(input_text) - TRAIN_LEN - 100))
-                start = input_text.index(".", start)
-                pruned = input_text[start:start + TRAIN_LEN]
-            # print(pruned)
-            # input_mat.extend(v.to_matrix(pruned))
-            input_mat = v.to_matrix(pruned)
-            # input_mat = text_2_matrix(pruned)
-            TrainDS = make_dataset(input_mat, v)
-            # ######## net.reset() ### maybe use this?
-
-    plot_result(errs, "Error graph")
-
+            net.fit(X, y, nb_epoch=train_epochs, batch_size=256, show_accuracy=True, validation_split=0.05, verbose=1) #batch_size=min(128,len(X[0])),
+            save_weights(net,'run{}-weights'.format(RUN_ID))
 
 if __name__ == "__main__":
     run()
