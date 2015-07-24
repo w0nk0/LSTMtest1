@@ -16,6 +16,9 @@ import time
 import argparse 
 from random import randint
 
+import logging
+warn = logging.warning
+
 from rddt import redditor_text #, FlatReddit
 
 from keras.preprocessing import sequence
@@ -32,10 +35,10 @@ from vectorizer import Vectorizer, VectorizerTwoChars
 ################ ARGUMENTS PARSING ################
 
 parser = argparse.ArgumentParser("Keras' demo LSTM generation")
-arglist = "--redditor --subreddit --textfile --loadweightsfile"
+arglist = "--redditor --subreddit --textfile --loadweightsfile --vectorfile"
 for arg in arglist.split(" "):
     parser.add_argument(arg)
-arglist = "--subredditposts --redditorposts --sentencelen --sentencestep --hidden --trainlen"
+arglist = "--subredditposts --redditorposts --windowlen --windowstep --hidden --trainlen"
 for arg in arglist.split(" "):
     parser.add_argument(arg,type=int)
 args = parser.parse_args()
@@ -43,7 +46,8 @@ args = parser.parse_args()
 ################ INIT GLOBAL VARIABLES ################
 
 RUN_ID = int(time.time() % 1000)
-WINDOW_LEN = 40 # 50
+WINDOW_LEN = args.windowlen or 50 # 50
+WINDOW_STEP = args.windowstep or 1
 TRAIN_LEN = args.trainlen or 200000 # 15000
 HIDDEN_NEURONS = args.hidden or 512 # 400
 TEXT_FILE = args.textfile #"rddt-de-300.cache"# r"..\\rddt\\cache\\rddt-fatlogic-150.cache"
@@ -51,11 +55,12 @@ REDDITOR = args.redditor or "w0nk0" # None # "pineconez"
 REDDIT_MODE = "TEXT" # TEXT or WORDS
 NUM_POSTS = args.redditorposts or 100 #
 load_weights_file = args.loadweightsfile
+load_vectorizer_file = args.vectorfile
 
 
 outfile = None
 from time import time
-output_file_name="run{}-generated-Neu{}-winlen{}.txt".format(RUN_ID,int(time() % 10000),HIDDEN_NEURONS,WINDOW_LEN)
+output_file_name="run{}-generated-Neu{}-winlen{}.txt".format(RUN_ID,HIDDEN_NEURONS,WINDOW_LEN)
 try:
     outfile = open(output_file_name, "at")
     print("Will write generated text to {}".format(output_file_name))
@@ -148,7 +153,6 @@ class OneCharacterVectorizer(Vectorizer):
             tokens.append(stream[n])
         return tokens
 
-
 class RandomVectorizer(Vectorizer):
     def from_vector(self, vec,unknown_token_value=None):
         # print("old vec: {}".format(vec))
@@ -231,13 +235,13 @@ def make_dataset_withtime(data_matrix, v, length):
 
     return np.array(in_batch), np.array(out_batch)
 
-def make_dataset_single_predict(data_matrix, v, length):
+def make_dataset_single_predict(data_matrix, v, length,step=1):
     in_batch, out_batch = [], []
     for num in range(0,len(data_matrix) - length - 1,2):  # )(data_matrix[length:-1]):
         # 1 line = 1 character_classification_vector
         input = []  # , input = [olditem, item
         output= []
-        for x in range(length):
+        for x in range(0,length,step):
             input.append(data_matrix[num + x])
             output.append(data_matrix[num+x+1])
 
@@ -303,11 +307,11 @@ def vector_randomized(vector, static_factor=0.5):
 def make_net(in_size, out_size, hidden_size=20):
     model = Sequential()
     # model.add(LSTM(input_dim = in_size, output_dim = in_size, init="uniform", activation = "sigmoid", return_sequences=True))
-    model.add(LSTM(input_dim=in_size, output_dim=int(hidden_size),  return_sequences=True))
-    model.add(Dropout(0.25))
-    model.add(LSTM(input_dim=hidden_size, output_dim=int(hidden_size),  return_sequences=False))
+    model.add(GRU(input_dim=in_size, output_dim=int(hidden_size),  return_sequences=False))
+    #model.add(Dropout(0.1))
+    #model.add(GRU(input_dim=hidden_size, output_dim=int(hidden_size),  return_sequences=False))
 
-    model.add(Dropout(0.25))
+    model.add(Dropout(0.4))
 
     #model.add(LSTM(input_dim=hidden_size, output_dim=hidden_size, init="glorot_normal"))
     #model.add(Dropout(0.3))
@@ -320,9 +324,41 @@ def make_net(in_size, out_size, hidden_size=20):
     # model.add(Dense(input_dim = 5, output_dim = 1, init = "uniform", activation = "tanh"))
     print("Compiling net..with {} input, {} outputs, {} hidden please hold!".format(in_size, out_size, hidden_size))
     # model.compile(loss = "mean_squared_error", optimizer = "rmsprop",class_mode="binary")
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop', class_mode="binary")  # or binary
+    
+    #model.compile(loss='categorical_crossentropy', optimizer='rmsprop', class_mode="binary")  # or binary
+    rmsfast = RMSprop(lr=0.05)
+    model.compile(loss='mse', optimizer='rmsprop', class_mode="categorical")  # or binary
     return model
 
+
+def make_net_LSTM(in_size, out_size, hidden_size=20):
+    model = Sequential()
+    # model.add(LSTM(input_dim = in_size, output_dim = in_size, init="uniform", activation = "sigmoid", return_sequences=True))
+    model.add(LSTM(input_dim=in_size, output_dim=int(hidden_size),  return_sequences=True))
+    model.add(Dropout(0.2))
+    model.add(LSTM(input_dim=hidden_size, output_dim=int(hidden_size),  return_sequences=True))
+    model.add(Dropout(0.2))
+    model.add(LSTM(input_dim=hidden_size, output_dim=int(hidden_size),  return_sequences=True))
+    model.add(Dropout(0.2))
+    model.add(LSTM(input_dim=hidden_size, output_dim=int(hidden_size),  return_sequences=False))
+
+    model.add(Dropout(0.2))
+
+    #model.add(LSTM(input_dim=hidden_size, output_dim=hidden_size, init="glorot_normal"))
+    #model.add(Dropout(0.3))
+
+    #model.add(Dense(input_dim=hidden_size, output_dim=out_size, init="glorot_normal", activation="softmax"))
+    #model.add(TimeDistributedDense(input_dim=int(hidden_size/2), output_dim=out_size))
+    model.add(Dense(input_dim=int(hidden_size), output_dim=out_size))
+    model.add(Activation('softmax'))
+
+    # model.add(Dense(input_dim = 5, output_dim = 1, init = "uniform", activation = "tanh"))
+    print("Compiling net..with {} input, {} outputs, {} hidden please hold!".format(in_size, out_size, hidden_size))
+    # model.compile(loss = "mean_squared_error", optimizer = "rmsprop",class_mode="binary")
+    
+    rmsfast = RMSprop(lr=0.004)
+    model.compile(loss='mse', optimizer=rmsfast, class_mode="categorical")  # or binary
+    return model
 
 def get_input_text(filename, redditor, train_len, posts=200):
     input_text="#FAILED_READING_FILE<{}>#".format(filename)
@@ -347,10 +383,12 @@ def get_input_text(filename, redditor, train_len, posts=200):
     # print("Pruned:",pruned)
     return input_text, pruned
 
-
-def predict_100(net,vectorizer,X,y,randomness=0.2, custom_primer=None):
+def predict_100(net,vectorizer,X,y,randomness=0.1, custom_primer=None):
+    """RANDOMNESS <0: from_random_sample = sampling by distribution with vector weights
+       RANDOMNESS >0: nerfing winners with probability X, then picking winner post-nerfing
+    """
     banner("Generating")
-    random_factor=static_factor=randomness+random()*0.25
+    random_factor=static_factor=randomness # +random()*randomness*randomness
     print("--------> Using static factor {} <--------".format(static_factor))
     def randomized(vector, static_factor=0.5):
         a=[random()+static_factor for x in range(len(vector))]
@@ -377,9 +415,9 @@ def predict_100(net,vectorizer,X,y,randomness=0.2, custom_primer=None):
         print("len(X)",len(X))
 
     if custom_primer:
-        primer = " " * 100 + "#_B_#" + custom_primer + "#_E_#"
-        primer_mat = vec.to_matrix(primer[:WINDOW_LEN])
-        P,_ = make_dataset_single_predict(primer_mat, vec, WINDOW_LEN)
+        primer = " " * 100 + custom_primer #"#_B_#" + custom_primer + "#_E_#"
+        primer_mat = vec.to_matrix(primer[-WINDOW_LEN:])
+        P,_ = make_dataset_single_predict(primer_mat, vec, WINDOW_LEN, step=1)
         current = np.array([primer_mat])
     else:
         idx = randint(0,len(X)-2)
@@ -392,7 +430,7 @@ def predict_100(net,vectorizer,X,y,randomness=0.2, custom_primer=None):
 
     result=""
     try:
-        result = "".join([vec.from_vector(x) for x in current[0]])+" -> "
+        result = "".join([vec.from_vector(x) for x in current[0]])+"/"
     except:
         result = "## "
     print_offset = 0
@@ -426,7 +464,12 @@ def predict_100(net,vectorizer,X,y,randomness=0.2, custom_primer=None):
             new_current.append(c)
 
         ## get the best/randomized NON-UNKNOWN winner
-        txt = vec.from_vector_rand(p0[-1],random_factor,unknown_token_value="#?#") # WAS NO_DUMMY
+        if randomness<0.0:
+          #txt = vec.from_vector_sampled(p0[-1],-randomness) # 
+          txt = vec.from_vector_multinomialsampled(p0[-1],-randomness) # now in git
+        else:
+          txt = vec.from_vector_rand(p0[-1],random_factor,unknown_token_value="#?#") # WAS NO_DUMMY
+        
         rand_p = vec.vector(txt)
         ## and feed it back into the batch
         new_current.append(rand_p)
@@ -482,6 +525,7 @@ def predict_100(net,vectorizer,X,y,randomness=0.2, custom_primer=None):
     print(result.replace('\n',r'\\n'))
     if outfile:
         outfile.write("\n\n"+result+"\n")
+        outfile.flush()
     print("(rand factor was {})\n".format(static_factor))
     banner("end predict")
 
@@ -496,7 +540,7 @@ def save_weights(model,fname):
             f.write(weight_str)
         return True
     except:
-        warn('Couldnt write weights to {}'.format(weight_file))
+        warn('Couldnt write weights to {}'.format(fname))
 
 def load_weights(model,fname):
     """ sets weights from file, returns model"""
@@ -510,7 +554,8 @@ def load_weights(model,fname):
         model.set_weights(w)
         return model
     except:
-        warn('Couldnt write weights to ',weight_file)
+        warn('Couldnt write weights to {}'.format(fname))
+        raise
 
 
 def run():
@@ -522,8 +567,10 @@ def run():
     banner("--")
     banner("Run() starting, getting data..")
     input_text, pruned = get_input_text(TEXT_FILE, REDDITOR, TRAIN_LEN, posts=NUM_POSTS)
-    with open("run{}-input_text.txt".format(RUN_ID),"wt") as f:
-        f.write(input_text)
+    input_text = input_text.encode('ascii',errors='xmlcharrefreplace').decode('ascii')
+    pruned = pruned.encode('ascii',errors='xmlcharrefreplace').decode('ascii')
+    with open("run{}-input_text-cp1252.txt".format(RUN_ID),"wb") as f:
+        f.write(input_text.encode("cp1252",errors="replace"))
  
     #input_text = pruned = "abbcccdddd eeeeeffffff abc def? " * 8
 
@@ -541,6 +588,10 @@ def run():
     banner("Vectorizing")
     v = TimeVectorizerNoUnknown(input_text,cutoff=LIMIT)
     print("Len vectorizer:", len(v.dictionary))
+    
+    if load_vectorizer_file:
+      v.load(load_vectorizer_file)
+    
     print("Saving vectorizer")
     v.save("run{}-vector.pkl".format(RUN_ID))
     input_mat = v.to_matrix(pruned)
@@ -587,7 +638,7 @@ def run():
     banner("Net compiled!")
     banner("Make dataset..")
     # X,y = make_dataset_n(input_mat,v,WINDOW_LEN)
-    X, y = make_dataset_single_predict(input_mat, v, WINDOW_LEN)
+    X, y = make_dataset_single_predict(input_mat, v, WINDOW_LEN,step=WINDOW_STEP)
     #print("----------X-----------\n", X)
     if False:
         print("Shapes: X", X.shape, "y", y.shape)
@@ -613,36 +664,38 @@ def run():
         print("Loading weights from {} as per argument!".format(load_weights_file))
         net = load_weights(net,load_weights_file)
 
-    predict_100(net,v,X,y)
-    save_weights(net,'run{}-weights'.format(RUN_ID))
-    net.fit(X, y, nb_epoch=1, batch_size=WINDOW_LEN, show_accuracy=True, validation_split=0.1, verbose=1)
-    save_weights(net,'run{}-weights'.format(RUN_ID))
+    #predict_100(net,v,X,y,custom_primer="This is awesome!")
+    #save_weights(net,'run{}-weights'.format(RUN_ID))
+    #net.fit(X, y, nb_epoch=1, batch_size=min(512,len(y)), show_accuracy=True, validation_split=0.1, verbose=1)
+    #save_weights(net,'run{}-weights'.format(RUN_ID))
 
     zipped = list(zip(X, y))
     train_epochs=1.0
     trained_amount=1.0
     for i in range(10000):
-        # print("############# Predicting! iteration ", i)
-        # print("############# Predicting! iteration ", i)
-        predict_100(net, v, X, y)
-        predict_100(net, v, X, y)
-        # make sub-sample of train data and train with it
-
         # Train in mini-batches in stead of fll set? Did I do this because of 32 bit memory limits?
         # samp = sample(list(zipped), min(len(zipped), MINIBATCH))
         # Xpart = np.array([sx for sx, sy in samp])
         # ypart = np.array([sy for sx, sy in samp])
 
+        if True:
+            primer = redditor_text('w0nk0',20,justonerandom=True)
+            primer.encode('ascii',errors='replace').decode('ascii',errors='replace')
+            primer = primer[-WINDOW_LEN-6:] + ' #_B_#'
+        predict_100(net, v, X, y, randomness=[0.02,0.1,0.25][i%3],custom_primer=primer)
+        predict_100(net, v, X, y, randomness=[-0.01,-0.25,-0.55,-0.99,-1.2][i%5],custom_primer=primer)
         #fit for x seconds
         initial_time = time()
-        SECONDS = 90
+        SECONDS = 60
         banner("Fitting for at least {} seconds..".format(SECONDS))
         train_epochs =int(max(1,0.5*trained_amount + 0.5*train_epochs))
         trained_amount=0
         while time() < initial_time + SECONDS:
             trained_amount+=train_epochs
-            net.fit(X, y, nb_epoch=train_epochs, batch_size=256, show_accuracy=True, validation_split=0.05, verbose=1) #batch_size=min(128,len(X[0])),
+            net.fit(X, y, nb_epoch=train_epochs, batch_size=256, show_accuracy=True, validation_split=0.1, verbose=1) #batch_size=min(128,len(X[0])),
+            print("Saving network weights")
             save_weights(net,'run{}-weights'.format(RUN_ID))
+        
 
 if __name__ == "__main__":
     run()
