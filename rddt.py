@@ -117,7 +117,7 @@ def redditor_text(redditor, amount=50, justonerandom=False, REDDIT_MODE='TEXT'):
         else:
             #txt = txt.encode('utf-8', errors='xmlcharrefreplace')
             pass
-        txt = html.escape(txt)
+        #txt = html.escape(txt)
         return txt
     elif REDDIT_MODE == "WORDS":
         for item in "*":
@@ -128,7 +128,7 @@ def redditor_text(redditor, amount=50, justonerandom=False, REDDIT_MODE='TEXT'):
             txt=txt.replace(item+" "," "+item+" ")
 
         ## TODO : Test!!
-        uni = str(txt.encode('utf-8', errors='replace'))
+        uni = txt.encode('cp1252', errors='replace').decode('cp1252', errors='replace')
         ## TODO might have to uni = str(uni)
 
         return [html.escape(x+" ") for x in uni.split(" ")]

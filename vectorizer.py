@@ -1,3 +1,5 @@
+import numpy as np
+
 class Vectorizer:
     def __init__(self, fulltext, cutoff=None):
         self.vector_len=0
@@ -6,7 +8,7 @@ class Vectorizer:
 
     def save(self,binary_file_name):
         from pickle import dump
-        with open(binary_file_name,"wt") as outfile:
+        with open(binary_file_name,"wb") as outfile:
             dump(self.dictionary,outfile)
             print('Dictionary pickled into {}'.format(binary_file_name))
             return True
@@ -15,7 +17,7 @@ class Vectorizer:
 
     def load(self,binary_file_name):
         from pickle import load
-        with open(binary_file_name,"rt") as infile:
+        with open(binary_file_name,"rb") as infile:
             self.dictionary = load(infile)
             self.vector_len = len(self.dictionary)
             print('Dictionary loaded from {}'.format(binary_file_name))
@@ -24,7 +26,7 @@ class Vectorizer:
         return False
 
     def detokenize(self, token):
-        return ""+token
+        return ""+token or None
 
     def tokenize(self,stream):
         tokens=[]
@@ -112,6 +114,25 @@ class Vectorizer:
             if random()<(1-randomization):
                 break
         return self.detokenize(self.item(idx))
+        
+    def from_vector_sampled(self,vec,randomness=0.01):
+        from random import random
+        from bisect import bisect
+        weights = vec
+        total = 0
+        cum_weights = []
+        for w in weights:
+            total += w
+            cum_weights.append(total)
+        position = ((1-randomness)*random() + randomness)  * total
+        idx = bisect(cum_weights, position)
+        return self.detokenize(self.item(idx))
+        
+    def from_vector_multinomialsampled(self,a, temperature=1.0):
+        a = np.log(a)/temperature
+        a = np.exp(a)/np.sum(np.exp(a))
+        return self.detokenize(self.item(np.argmax(np.random.multinomial(1,a,1))))
+        
 
 
 
